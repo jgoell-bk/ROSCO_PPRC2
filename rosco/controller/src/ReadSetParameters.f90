@@ -648,6 +648,18 @@ CONTAINS
         CALL ParseAry(  FileLines,  'StC_GroupIndex',   CntrPar%StC_GroupIndex, CntrPar%StC_Group_N,    accINFILE(1), ErrVar, CntrPar%StC_Mode == 0, UnEc)
         IF (ErrVar%aviFAIL < 0) RETURN
 
+        !------------- Platform Proportional Resonant Control -----
+        CALL ParseInput(FileLines,  'PPPR_Mode',            CntrPar%PPPR_Mode,          accINFILE(1), ErrVar, UnEc=UnEc)
+        CALL ParseInput(FileLines,  'PPPR_amp_phi',         CntrPar%PPPR_amp_phi,       accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
+        CALL ParseInput(FileLines,  'PPPR_freq_phi',        CntrPar%PPPR_freq_phi,      accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
+        CALL ParseInput(FileLines,  'PPPR_amp_omega',       CntrPar%PPPR_amp_omega,     accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
+        CALL ParseInput(FileLines,  'PPPR_freq_omega',      CntrPar%PPPR_freq_omega,    accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
+        CALL ParseInput(FileLines,  'Phi_phaseoffset',      CntrPar%Phi_phaseoffset,    accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
+        CALL ParseInput(FileLines,  'Omega_phaseoffset',    CntrPar%Omega_phaseoffset,  accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
+        CALL ParseAry(  FileLines,  'PPPR_CntrGains_phi',   CntrPar%PPPR_CntrGains_phi,   2,          accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
+        CALL ParseAry(  FileLines,  'PPPR_CntrGains_omega', CntrPar%PPPR_CntrGains_omega, 2,          accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
+        IF (ErrVar%aviFAIL < 0) RETURN
+
         ! Open loop cable, structural control, needs number of groups
         CALL ParseAry(  FileLines, 'Ind_CableControl',   CntrPar%Ind_CableControl,  CntrPar%CC_Group_N,     accINFILE(1),   ErrVar,  CntrPar%CC_Mode .NE. 2,    UnEc=UnEc)
         CALL ParseAry(  FileLines, 'Ind_StructControl',  CntrPar%Ind_StructControl, CntrPar%StC_Group_N,    accINFILE(1),   ErrVar,  CntrPar%StC_Mode .NE. 2,   UnEc=UnEc)
@@ -1746,6 +1758,26 @@ CONTAINS
                     ErrVar%ErrMsg = 'StC_GroupIndices must be greater than 2801.'        !< Starting index for the cable control
                 END IF
             END DO
+        END IF
+
+        ! --- Platform Proportional Resonant Control ---
+        IF (CntrPar%PPPR_Mode > 0) THEN
+            IF (CntrPar%PPPR_freq_phi <= 0.0) THEN
+                ErrVar%aviFAIL = -1
+                ErrVar%ErrMsg = 'PPPR_freq_phi must be greater than 0'
+            END IF
+            IF (CntrPar%PPPR_freq_omega <= 0.0) THEN
+                ErrVar%aviFAIL = -1
+                ErrVar%ErrMsg = 'PPPR_freq_omega must be greater than 0'
+            END IF
+            IF (SIZE(CntrPar%PPPR_CntrGains_phi) /= 2) THEN
+                ErrVar%aviFAIL = -1
+                ErrVar%ErrMsg = 'PPPR_CntrGains_phi must have exactly 2 values [Kp, Ki]'
+            END IF
+            IF (SIZE(CntrPar%PPPR_CntrGains_omega) /= 2) THEN
+                ErrVar%aviFAIL = -1
+                ErrVar%ErrMsg = 'PPPR_CntrGains_omega must have exactly 2 values [Kp, Ki]'
+            END IF
         END IF
 
         ! Check that open loop control active if using open loop cable/struct control

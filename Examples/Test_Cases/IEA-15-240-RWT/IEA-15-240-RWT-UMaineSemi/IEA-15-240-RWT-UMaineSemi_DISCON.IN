@@ -245,3 +245,14 @@
 !------- Structural Controllers ---------------------------------------------------------
 1                   ! StC_Group_N       - Number of cable control groups
 0                   ! StC_GroupIndex    - First index for structural control group, options specified in ServoDyn summary output
+
+!------- PLATFORM PROPORTIONAL RESONANT CONTROL ---------------------------------------------------------
+1                   ! PPPR_Mode         - Platform proportional resonant control mode {0 - off, 1 - on}
+0.01000             ! PPPR_amp_phi      - Amplitude for platform pitch sinusoidal reference [rad]
+0.21300             ! PPPR_freq_phi     - Frequency for platform pitch resonant controller (platform pitch natural freq = 0.213 rad/s) [rad/s]
+1.0e+06             ! PPPR_amp_omega    - Amplitude for generator torque sinusoidal reference [Nm]
+0.21300             ! PPPR_freq_omega   - Frequency for generator torque resonant controller [rad/s]
+0.0                 ! Phi_phaseoffset   - Phase offset for platform pitch reference [deg]
+0.0                 ! Omega_phaseoffset - Phase offset for generator torque reference [deg]
+1.0  0.5            ! PPPR_CntrGains_phi    - [Kp, Ki] gains for phi resonant controller [-]
+1.0  0.5            ! PPPR_CntrGains_omega  - [Kp, Ki] gains for omega resonant controller [-]

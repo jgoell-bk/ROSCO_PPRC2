@@ -1223,6 +1223,71 @@ SUBROUTINE StructuralControl(avrSWAP, CntrPar, LocalVar, objInst, ErrVar)
         inst = inst + 1
         
     END FUNCTION ResController
+!-------------------------------------------------------------------------------------------------------------------------------
+SUBROUTINE PlatformProportionalResControl(CntrPar, LocalVar, DebugVar, objInst)
+    ! Platform Pitch Proportional Resonant Control
+    !       PPPR_Mode = 0, Inactive
+    !       PPPR_Mode = 1, Active
 
+    USE ROSCO_Types,       ONLY : ControlParameters, LocalVariables, DebugVariables, ObjectInstances
+
+    TYPE(ControlParameters), INTENT(INOUT) :: CntrPar
+    TYPE(DebugVariables),    INTENT(INOUT) :: DebugVar
+    TYPE(LocalVariables),    INTENT(INOUT) :: LocalVar
+    TYPE(ObjectInstances),   INTENT(INOUT) :: objInst
+
+    ! Local variables
+    REAL(DbKi)     :: phi_error              ! platform pitch error [rad]
+    REAL(DbKi)     :: phi_control_out        ! controller output [deg]
+    REAL(DbKi)     :: tau_error              ! Gen Torque error [?]
+    REAL(DbKi)     :: tau_control_out        ! controller output [?]
+    REAL(DbKi)     :: phi_ref                ! platform pitch reference [rad]    
+    REAL(DbKi)     :: tau_ref                ! generator torque reference [Nm]
+    INTEGER(IntKi) :: K                      ! Index used for looping through blades
+    REAL(DbKi)     :: StartTime = 0.0        ! Start time of closed-loop PR Control
+
+    ! Initialize 
+
+    phi_ref =           0.0_DbKi
+    tau_ref =           0.0_DbKi
+    phi_control_out =   0.0_DbKi
+    tau_control_out =   0.0_DbKi
+
+
+    ! If Controller Active
+    IF (CntrPar%PPPR_Mode == 1 .AND. LocalVar%Time .GT. 30.0_DbKi) THEN
+
+
+        ! Resonant controller (returns pitch offset)
+        IF (LocalVar%Time .GT. StartTime) THEN
+	    
+	    ! Compute errors for phi and tau as actual vs sinusoidal reference
+
+            phi_ref = CntrPar%PPPR_amp_phi*sin(LocalVar%Time*CntrPar%PPPR_freq_phi + CntrPar%Phi_phaseoffset*D2R)
+	    phi_error = LocalVar%PtfmRDY - phi_ref
+
+	    tau_ref = CntrPar%PPPR_amp_omega*sin(LocalVar%Time*CntrPar%PPPR_freq_omega + CntrPar%Omega_phaseoffset*D2R)
+            tau_error = LocalVar%GenTq - tau_ref
+
+            phi_control_out = ResController(phi_error, CntrPar%PPPR_CntrGains_phi(1), CntrPar%PPPR_CntrGains_phi(2), CntrPar%PPPR_freq_phi, &
+                                                      CntrPar%PC_MinPit, CntrPar%PC_MaxPit, LocalVar%DT, LocalVar%resP, LocalVar%restart, objInst%instRes_phi)
+            tau_control_out = ResController(tau_error, CntrPar%PPPR_CntrGains_omega(1), CntrPar%PPPR_CntrGains_omega(2), CntrPar%PPPR_freq_omega, &
+                                                      CntrPar%VS_MinTq, CntrPar%VS_MaxTq, LocalVar%DT, LocalVar%resP, LocalVar%restart, objInst%instRes_tau)
+
+        ENDIF
+
+
+        ! Apply pitch offset equally to all blades
+        DO K = 1, LocalVar%NumBl
+            LocalVar%PitCom(K) = LocalVar%PitCom(K) + phi_control_out
+        END DO
+
+	! Apply generator offset
+
+	LocalVar%GenTq = LocalVar%GenTq + tau_control_out
+
+    END IF
+
+END SUBROUTINE PlatformProportionalResControl
 !-------------------------------------------------------------------------------------------------------------------------------
 END MODULE Controllers

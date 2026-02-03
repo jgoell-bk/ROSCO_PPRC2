@@ -119,6 +119,11 @@ IF (((LocalVar%iStatus >= 0) .OR. (LocalVar%iStatus <= -8)) .AND. (ErrVar%aviFAI
         CALL PitchControl(avrSWAP, CntrPar, LocalVar, objInst, DebugVar, ErrVar)
     END IF
     
+    ! Platform Proportional Resonant Control
+    IF (CntrPar%PPPR_Mode > 0) THEN
+        CALL PlatformProportionalResControl(CntrPar, LocalVar, DebugVar, objInst)
+    END IF
+    
     IF (CntrPar%Y_ControlMode > 0) THEN
         CALL YawRateControl(avrSWAP, CntrPar, LocalVar, objInst, DebugVar, ErrVar)
     END IF

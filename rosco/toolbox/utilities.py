@@ -543,6 +543,16 @@ def DISCON_dict(turbine, controller, txt_filename=None):
     DISCON_dict['ZMQ_Mode']         = int(controller.ZMQ_Mode)
     DISCON_dict['CC_Mode']          = int(controller.CC_Mode)
     DISCON_dict['StC_Mode']          = int(controller.StC_Mode)
+    # Platform Proportional Resonant Control
+    DISCON_dict['PPPR_Mode']            = 0
+    DISCON_dict['PPPR_amp_phi']         = 0.0
+    DISCON_dict['PPPR_freq_phi']        = 0.2
+    DISCON_dict['PPPR_amp_omega']       = 0.0
+    DISCON_dict['PPPR_freq_omega']      = 0.2
+    DISCON_dict['Phi_phaseoffset']      = 0.0
+    DISCON_dict['Omega_phaseoffset']    = 0.0
+    DISCON_dict['PPPR_CntrGains_phi']   = [0.0, 0.0]
+    DISCON_dict['PPPR_CntrGains_omega'] = [0.0, 0.0]
     # ------- FILTERS -------
     DISCON_dict['F_LPFCornerFreq']	    = turbine.bld_edgewise_freq * 1/4
     DISCON_dict['F_LPFDamping']		    = controller.F_LPFDamping

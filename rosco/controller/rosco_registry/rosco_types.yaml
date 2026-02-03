@@ -832,6 +832,39 @@ ControlParameters:
       description: Cable control group indices
       allocatable: True
 
+    # Platform Proportional Resonant Control (PPPR)
+    PPPR_Mode:
+      <<: *integer
+      description: Platform Proportional Resonant Control mode {0 - off, 1 - on}
+    PPPR_amp_phi:
+      <<: *real
+      description: Amplitude for platform pitch sinusoidal reference [rad]
+    PPPR_freq_phi:
+      <<: *real
+      description: Frequency for platform pitch resonant controller [rad/s]
+    PPPR_amp_omega:
+      <<: *real
+      description: Amplitude for generator torque/speed sinusoidal reference [Nm or rad/s]
+    PPPR_freq_omega:
+      <<: *real
+      description: Frequency for generator torque resonant controller [rad/s]
+    Phi_phaseoffset:
+      <<: *real
+      description: Phase offset for platform pitch reference [deg]
+    Omega_phaseoffset:
+      <<: *real
+      description: Phase offset for generator torque reference [deg]
+    PPPR_CntrGains_phi:
+      <<: *real
+      allocatable: True
+      dimension: (:)
+      description: PPPR controller gains [Kp, Ki] for platform pitch [-]
+    PPPR_CntrGains_omega:
+      <<: *real
+      allocatable: True
+      dimension: (:)
+      description: PPPR controller gains [Kp, Ki] for generator torque [-]
+
     # Calculated
     PC_RtTq99:
       <<: *real
@@ -1655,6 +1688,12 @@ ObjectInstances:
   instRL:
     <<: *integer
     description: Rate limiter instance
+  instRes_phi:
+    <<: *integer
+    description: Resonant controller instance for platform pitch
+  instRes_tau:
+    <<: *integer
+    description: Resonant controller instance for generator torque
 
 PerformanceData:
   TSR_vec:
