@@ -1239,17 +1239,17 @@ SUBROUTINE PlatformProportionalResControl(CntrPar, LocalVar, DebugVar, objInst)
     ! Local variables
     REAL(DbKi)     :: phi_error              ! platform pitch error [rad]
     REAL(DbKi)     :: phi_control_out        ! controller output [deg]
-    REAL(DbKi)     :: tau_error              ! Gen Torque error [?]
+    REAL(DbKi)     :: omega_error            ! generator speed error [rad/s]
     REAL(DbKi)     :: tau_control_out        ! controller output [?]
     REAL(DbKi)     :: phi_ref                ! platform pitch reference [rad]    
-    REAL(DbKi)     :: tau_ref                ! generator torque reference [Nm]
+    REAL(DbKi)     :: omega_ref              ! generator speed reference [rad/s]
     INTEGER(IntKi) :: K                      ! Index used for looping through blades
     REAL(DbKi)     :: StartTime = 0.0        ! Start time of closed-loop PR Control
 
     ! Initialize 
 
     phi_ref =           0.0_DbKi
-    tau_ref =           0.0_DbKi
+    omega_ref =         0.0_DbKi
     phi_control_out =   0.0_DbKi
     tau_control_out =   0.0_DbKi
 
@@ -1261,17 +1261,17 @@ SUBROUTINE PlatformProportionalResControl(CntrPar, LocalVar, DebugVar, objInst)
         ! Resonant controller (returns pitch offset)
         IF (LocalVar%Time .GT. StartTime) THEN
 	    
-	    ! Compute errors for phi and tau as actual vs sinusoidal reference
+        ! Compute errors for phi and omega as actual vs sinusoidal reference
 
             phi_ref = CntrPar%PPPR_amp_phi*sin(LocalVar%Time*CntrPar%PPPR_freq_phi + CntrPar%Phi_phaseoffset*D2R)
 	    phi_error = LocalVar%PtfmRDY - phi_ref
 
-	    tau_ref = CntrPar%PPPR_amp_omega*sin(LocalVar%Time*CntrPar%PPPR_freq_omega + CntrPar%Omega_phaseoffset*D2R)
-            tau_error = LocalVar%GenTq - tau_ref
+        omega_ref = CntrPar%VS_RefSpd + CntrPar%PPPR_amp_omega*sin(LocalVar%Time*CntrPar%PPPR_freq_omega + CntrPar%Omega_phaseoffset*D2R)
+            omega_error = LocalVar%GenSpeedF - omega_ref
 
             phi_control_out = ResController(phi_error, CntrPar%PPPR_CntrGains_phi(1), CntrPar%PPPR_CntrGains_phi(2), CntrPar%PPPR_freq_phi, &
                                                       CntrPar%PC_MinPit, CntrPar%PC_MaxPit, LocalVar%DT, LocalVar%resP, LocalVar%restart, objInst%instRes_phi)
-            tau_control_out = ResController(tau_error, CntrPar%PPPR_CntrGains_omega(1), CntrPar%PPPR_CntrGains_omega(2), CntrPar%PPPR_freq_omega, &
+            tau_control_out = ResController(omega_error, CntrPar%PPPR_CntrGains_omega(1), CntrPar%PPPR_CntrGains_omega(2), CntrPar%PPPR_freq_omega, &
                                                       CntrPar%VS_MinTq, CntrPar%VS_MaxTq, LocalVar%DT, LocalVar%resP, LocalVar%restart, objInst%instRes_tau)
 
         ENDIF
