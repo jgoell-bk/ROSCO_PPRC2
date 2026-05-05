@@ -1263,10 +1263,10 @@ SUBROUTINE PlatformProportionalResControl(CntrPar, LocalVar, DebugVar, objInst)
 	    
         ! Compute errors for phi and omega as actual vs sinusoidal reference
 
-            phi_ref = CntrPar%PPPR_amp_phi*sin(LocalVar%Time*CntrPar%PPPR_freq_phi + CntrPar%Phi_phaseoffset*D2R)
+            phi_ref = CntrPar%PPPR_amp_phi*sin(LocalVar%Time*2*PI*CntrPar%PPPR_freq_phi + CntrPar%Phi_phaseoffset*D2R)
 	    phi_error = LocalVar%PtfmRDY - phi_ref
 
-        omega_ref = CntrPar%VS_RefSpd + CntrPar%PPPR_amp_omega*sin(LocalVar%Time*CntrPar%PPPR_freq_omega + CntrPar%Omega_phaseoffset*D2R)
+        omega_ref = CntrPar%VS_RefSpd + CntrPar%PPPR_amp_omega*sin(LocalVar%Time*2*PI*CntrPar%PPPR_freq_omega + CntrPar%Omega_phaseoffset*D2R)
             omega_error = LocalVar%GenSpeedF - omega_ref
 
             phi_control_out = ResController(phi_error, CntrPar%PPPR_CntrGains_phi(1), CntrPar%PPPR_CntrGains_phi(2), CntrPar%PPPR_freq_phi, &

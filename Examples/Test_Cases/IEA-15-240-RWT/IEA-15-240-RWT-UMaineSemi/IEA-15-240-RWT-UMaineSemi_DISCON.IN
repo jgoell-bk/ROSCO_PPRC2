@@ -10,7 +10,7 @@
 !------- CONTROLLER FLAGS -------------------------------------------------
 2                   ! F_LPFType       - 1: first-order low-pass filter, 2: second-order low-pass filter, [rad/s] (currently filters generator speed and pitch control signals
 0                   ! IPC_ControlMode - Turn Individual Pitch Control (IPC) for fatigue load reductions (pitch contribution) (0: off, 1: 1P reductions, 2: 1P+2P reductions)
-2                   ! VS_ControlMode  - Generator torque control mode in above rated conditions (0- no torque control, 1- k*omega^2 with PI transitions, 2- WSE TSR Tracking, 3- Power-based TSR Tracking, 4- Torque-based TSR Tracking)
+1                   ! VS_ControlMode  - Generator torque control mode in above rated conditions (0- no torque control, 1- k*omega^2 with PI transitions, 2- WSE TSR Tracking, 3- Power-based TSR Tracking, 4- Torque-based TSR Tracking)
 0                   ! VS_ConstPower   - Do constant power torque control, where above rated torque varies, 0 for constant torque)
 0                   ! VS_FBP          - Fixed blade pitch configuration mode (0- variable pitch (disabled), 1- constant power overspeed, 2- WSE-lookup reference tracking, 3- torque-lookup reference tracking)
 1                   ! PC_ControlMode  - Blade pitch control mode (0: No pitch, fix to fine pitch, 1: active PI blade pitch control)
@@ -249,9 +249,9 @@
 !------- PLATFORM PROPORTIONAL RESONANT CONTROL ---------------------------------------------------------
 1                   ! PPPR_Mode         - Platform proportional resonant control mode {0 - off, 1 - on}
 0.0872665             ! PPPR_amp_phi      - Amplitude for platform pitch sinusoidal reference [rad]
-0.21300             ! PPPR_freq_phi     - Frequency for platform pitch resonant controller (platform pitch natural freq = 0.213 rad/s) [rad/s]
+0.03391             ! PPPR_freq_phi     - Frequency for platform pitch resonant controller (platform pitch natural freq = 0.213 rad/s = 0.03391 Hz) [Hz]
 0.01             ! PPPR_amp_omega    - Amplitude for generator speed sinusoidal reference [rad/s]
-0.21300             ! PPPR_freq_omega   - Frequency for generator torque resonant controller [rad/s]
+0.03391             ! PPPR_freq_omega   - Frequency for generator torque resonant controller [Hz]
 0.0                 ! Phi_phaseoffset   - Phase offset for platform pitch reference [deg]
 0.0                 ! Omega_phaseoffset - Phase offset for generator torque reference [deg]
 5.0  1.0         ! PPPR_CntrGains_phi    - [Kp, Ki] gains for phi resonant controller [-]

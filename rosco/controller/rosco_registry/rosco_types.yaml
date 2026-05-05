@@ -841,13 +841,13 @@ ControlParameters:
       description: Amplitude for platform pitch sinusoidal reference [rad]
     PPPR_freq_phi:
       <<: *real
-      description: Frequency for platform pitch resonant controller [rad/s]
+      description: Frequency for platform pitch resonant controller [Hz]
     PPPR_amp_omega:
       <<: *real
       description: Amplitude for generator torque/speed sinusoidal reference [Nm or rad/s]
     PPPR_freq_omega:
       <<: *real
-      description: Frequency for generator torque resonant controller [rad/s]
+      description: Frequency for generator torque resonant controller [Hz]
     Phi_phaseoffset:
       <<: *real
       description: Phase offset for platform pitch reference [deg]

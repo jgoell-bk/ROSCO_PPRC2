@@ -6,6 +6,7 @@ Example: python plot_openfast_output.py PtfmPitch --tmax 80
 """
 
 import sys
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import argparse
@@ -189,10 +190,139 @@ def plot_multiple_variables(outfile, variable_names, tmax=None):
     plt.show()
 
 
+def _find_col(data, name):
+    """Resolve a base variable name to its actual column (handles _N duplicates and unit suffixes)."""
+    for col in data.columns:
+        if col == name or col.startswith(name + '_(') or col == name + '_1':
+            return col
+    for col in data.columns:
+        if name in col:
+            return col
+    return None
+
+
+def plot_pppr_diagnostic(outfile, tmax=None,
+                         pppr_amp_phi_deg=5.0,
+                         pppr_freq_hz=0.03391,
+                         pppr_activation_time=30.0,
+                         pc_maxpit_deg=90.0,
+                         vs_maxtq_knm=19790.0,
+                         rated_genspeed_rpm=7.55):
+    """
+    PPPR diagnostic dashboard for the PI: 2x3 panels showing the failure cascade.
+
+    Panels:
+      (1) BlPitch1 with PC_MaxPit saturation line
+      (2) PtfmPitch with sinusoidal phi reference overlay
+      (3) GenSpeed with rated speed line
+      (4) GenTq with VS_MaxTq saturation line
+      (5) TwrBsMyt (tower base fore-aft moment)
+      (6) RotThrust
+    """
+    print(f"Reading {outfile}...")
+    data = read_openfast_output(outfile)
+
+    if tmax is not None:
+        data = data[data['Time'] <= tmax]
+        print(f"Filtering data to t <= {tmax} seconds")
+
+    t = data['Time'].values
+
+    fig, axes = plt.subplots(2, 3, figsize=(18, 9), sharex=True)
+
+    # (1) BlPitch1 with saturation line
+    ax = axes[0, 0]
+    col = _find_col(data, 'BldPitch1')
+    if col is not None:
+        ax.plot(t, data[col], linewidth=1.2, color='C0')
+    ax.axhline(pc_maxpit_deg, color='red', linestyle='--', linewidth=1,
+               label=f'PC_MaxPit = {pc_maxpit_deg:.0f}°')
+    ax.set_ylabel('BlPitch1 [deg]')
+    ax.set_title('Blade pitch (saturation = full feather)')
+    ax.legend(loc='upper left', fontsize=9)
+    ax.grid(True, alpha=0.3)
+
+    # (2) PtfmPitch with sinusoidal reference overlay
+    ax = axes[0, 1]
+    col = _find_col(data, 'PtfmPitch')
+    if col is not None:
+        ax.plot(t, data[col], linewidth=1.2, color='C0', label='PtfmPitch (measured)')
+    phi_ref = np.where(
+        t >= pppr_activation_time,
+        pppr_amp_phi_deg * np.sin(2 * np.pi * pppr_freq_hz * t),
+        np.nan,
+    )
+    ax.plot(t, phi_ref, linewidth=1.0, color='red', linestyle='--',
+            label=f'phi_ref ({pppr_amp_phi_deg:.1f}° @ {pppr_freq_hz:.4f} Hz)')
+    ax.axvline(pppr_activation_time, color='gray', linestyle=':', linewidth=0.8,
+               label=f'PPPR on (t={pppr_activation_time:.0f}s)')
+    ax.set_ylabel('PtfmPitch [deg]')
+    ax.set_title('Platform pitch vs reference')
+    ax.legend(loc='upper left', fontsize=9)
+    ax.grid(True, alpha=0.3)
+
+    # (3) GenSpeed with rated speed line
+    ax = axes[0, 2]
+    col = _find_col(data, 'GenSpeed')
+    if col is not None:
+        ax.plot(t, data[col], linewidth=1.2, color='C0')
+    ax.axhline(rated_genspeed_rpm, color='green', linestyle='--', linewidth=1,
+               label=f'Rated = {rated_genspeed_rpm:.2f} rpm')
+    ax.axhline(0, color='black', linewidth=0.5)
+    ax.set_ylabel('GenSpeed [rpm]')
+    ax.set_title('Generator speed (negative = rotor reversal)')
+    ax.legend(loc='upper right', fontsize=9)
+    ax.grid(True, alpha=0.3)
+
+    # (4) GenTq with VS_MaxTq saturation line
+    ax = axes[1, 0]
+    col = _find_col(data, 'GenTq')
+    if col is not None:
+        ax.plot(t, data[col], linewidth=1.2, color='C0')
+    ax.axhline(vs_maxtq_knm, color='red', linestyle='--', linewidth=1,
+               label=f'VS_MaxTq = {vs_maxtq_knm:.0f} kN·m')
+    ax.set_ylabel('GenTq [kN·m]')
+    ax.set_xlabel('Time [s]')
+    ax.set_title('Generator torque (saturation = controller windup)')
+    ax.legend(loc='upper right', fontsize=9)
+    ax.grid(True, alpha=0.3)
+
+    # (5) TwrBsMyt - tower base fore-aft moment
+    ax = axes[1, 1]
+    col = _find_col(data, 'TwrBsMyt')
+    if col is not None:
+        ax.plot(t, data[col], linewidth=1.2, color='C0')
+    ax.axhline(0, color='black', linewidth=0.5)
+    ax.set_ylabel('TwrBsMyt [kN·m]')
+    ax.set_xlabel('Time [s]')
+    ax.set_title('Tower base fore-aft moment (structural impact)')
+    ax.grid(True, alpha=0.3)
+
+    # (6) RotThrust
+    ax = axes[1, 2]
+    col = _find_col(data, 'RotThrust')
+    if col is not None:
+        ax.plot(t, data[col], linewidth=1.2, color='C0')
+    ax.axhline(0, color='black', linewidth=0.5)
+    ax.set_ylabel('RotThrust [kN]')
+    ax.set_xlabel('Time [s]')
+    ax.set_title('Rotor thrust (collapse on feather)')
+    ax.grid(True, alpha=0.3)
+
+    fig.suptitle('PPPR Diagnostic: failure cascade overview',
+                 fontsize=14, fontweight='bold')
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
+
+    output_png = outfile.replace('.out', '_pppr_diagnostic.png')
+    plt.savefig(output_png, dpi=150)
+    print(f"\nPlot saved to: {output_png}")
+    plt.show()
+
+
 if __name__ == "__main__":
     # Default output file
     outfile = "IEA-15-240-RWT-UMaineSemi.out"
-    
+
     # Parse command line arguments
     parser = argparse.ArgumentParser(
         description='Plot OpenFAST output variables',
@@ -203,6 +333,9 @@ Examples:
   python plot_openfast_output.py PtfmPitch --tmax 80
   python plot_openfast_output.py BldPitch1 BldPitch2 BldPitch3 --tmax 60
   python plot_openfast_output.py PtfmPitch GenTq GenPwr
+  python plot_openfast_output.py --pppr                       # 2x3 PPPR diagnostic dashboard
+  python plot_openfast_output.py --pppr --tmax 200            # diagnostic, first 200 s
+  python plot_openfast_output.py --pppr --pppr-amp-phi 5.0 --pppr-freq 0.03391
 
 Common PPPR-relevant variables:
   - PtfmPitch      : Platform pitch angle
@@ -213,14 +346,40 @@ Common PPPR-relevant variables:
   - Wind1VelX      : Wind speed
         """
     )
-    parser.add_argument('variables', nargs='+', help='Variable name(s) to plot')
-    parser.add_argument('--tmax', type=float, default=None, 
+    parser.add_argument('variables', nargs='*', help='Variable name(s) to plot (omit when using --pppr)')
+    parser.add_argument('--tmax', type=float, default=None,
                         help='Maximum time to plot (seconds). Default: plot all data')
-    
+    parser.add_argument('--pppr', action='store_true',
+                        help='Render the 2x3 PPPR diagnostic dashboard')
+    parser.add_argument('--pppr-amp-phi', type=float, default=5.0,
+                        help='Phi reference amplitude in degrees (default 5.0)')
+    parser.add_argument('--pppr-freq', type=float, default=0.03391,
+                        help='PPPR reference frequency in Hz (default 0.03391 = 0.213 rad/s)')
+    parser.add_argument('--pppr-activation', type=float, default=30.0,
+                        help='PPPR activation time in seconds (default 30.0)')
+    parser.add_argument('--pc-maxpit', type=float, default=90.0,
+                        help='Pitch saturation upper limit in deg (default 90)')
+    parser.add_argument('--vs-maxtq', type=float, default=19790.0,
+                        help='Torque saturation limit in kN·m (default 19790)')
+    parser.add_argument('--rated-genspeed', type=float, default=7.55,
+                        help='Rated generator speed in rpm (default 7.55)')
+
     args = parser.parse_args()
-    
-    # Plot single or multiple variables
-    if len(args.variables) == 1:
+
+    if args.pppr:
+        plot_pppr_diagnostic(
+            outfile,
+            tmax=args.tmax,
+            pppr_amp_phi_deg=args.pppr_amp_phi,
+            pppr_freq_hz=args.pppr_freq,
+            pppr_activation_time=args.pppr_activation,
+            pc_maxpit_deg=args.pc_maxpit,
+            vs_maxtq_knm=args.vs_maxtq,
+            rated_genspeed_rpm=args.rated_genspeed,
+        )
+    elif len(args.variables) == 1:
         plot_variable(outfile, args.variables[0], tmax=args.tmax)
-    else:
+    elif len(args.variables) > 1:
         plot_multiple_variables(outfile, args.variables, tmax=args.tmax)
+    else:
+        parser.error('Provide variable names, or use --pppr for the diagnostic dashboard.')

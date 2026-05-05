@@ -222,9 +222,9 @@ TYPE, PUBLIC :: ControlParameters
     INTEGER(IntKi), DIMENSION(:), ALLOCATABLE     :: StC_GroupIndex              ! Cable control group indices
     INTEGER(IntKi)                :: PPPR_Mode                   ! Platform Proportional Resonant Control mode {0 - off, 1 - on}
     REAL(DbKi)                    :: PPPR_amp_phi                ! Amplitude for platform pitch sinusoidal reference [rad]
-    REAL(DbKi)                    :: PPPR_freq_phi               ! Frequency for platform pitch resonant controller [rad/s]
+    REAL(DbKi)                    :: PPPR_freq_phi               ! Frequency for platform pitch resonant controller [Hz]
     REAL(DbKi)                    :: PPPR_amp_omega              ! Amplitude for generator torque/speed sinusoidal reference [Nm or rad/s]
-    REAL(DbKi)                    :: PPPR_freq_omega             ! Frequency for generator torque resonant controller [rad/s]
+    REAL(DbKi)                    :: PPPR_freq_omega             ! Frequency for generator torque resonant controller [Hz]
     REAL(DbKi)                    :: Phi_phaseoffset             ! Phase offset for platform pitch reference [deg]
     REAL(DbKi)                    :: Omega_phaseoffset           ! Phase offset for generator torque reference [deg]
     REAL(DbKi), DIMENSION(:), ALLOCATABLE     :: PPPR_CntrGains_phi          ! PPPR controller gains [Kp, Ki] for platform pitch [-]

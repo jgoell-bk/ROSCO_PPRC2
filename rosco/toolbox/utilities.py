@@ -546,9 +546,9 @@ def DISCON_dict(turbine, controller, txt_filename=None):
     # Platform Proportional Resonant Control
     DISCON_dict['PPPR_Mode']            = 0
     DISCON_dict['PPPR_amp_phi']         = 0.0
-    DISCON_dict['PPPR_freq_phi']        = 0.2
+    DISCON_dict['PPPR_freq_phi']        = 0.0339        # [Hz] = 0.213 rad/s / (2*pi)
     DISCON_dict['PPPR_amp_omega']       = 0.0
-    DISCON_dict['PPPR_freq_omega']      = 0.2
+    DISCON_dict['PPPR_freq_omega']      = 0.0339        # [Hz] = 0.213 rad/s / (2*pi)
     DISCON_dict['Phi_phaseoffset']      = 0.0
     DISCON_dict['Omega_phaseoffset']    = 0.0
     DISCON_dict['PPPR_CntrGains_phi']   = [0.0, 0.0]
