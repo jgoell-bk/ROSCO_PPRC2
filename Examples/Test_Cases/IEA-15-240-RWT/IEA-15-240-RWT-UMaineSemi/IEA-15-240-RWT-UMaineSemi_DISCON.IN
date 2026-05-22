@@ -255,4 +255,4 @@
 0.0                 ! Phi_phaseoffset   - Phase offset for platform pitch reference [deg]
 0.0                 ! Omega_phaseoffset - Phase offset for generator torque reference [deg]
 5.0  1.0         ! PPPR_CntrGains_phi    - [Kp, Ki] gains for phi resonant controller [-]
-4.4235e8  8.847e7         ! PPPR_CntrGains_omega  - [Kp, Ki] gains for omega resonant controller [-]
+4.4235e8  8.8470e7         ! PPPR_CntrGains_omega  - [Kp, Ki] gains for omega resonant controller [-]

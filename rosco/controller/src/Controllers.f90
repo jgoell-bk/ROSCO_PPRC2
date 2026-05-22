@@ -1224,13 +1224,14 @@ SUBROUTINE StructuralControl(avrSWAP, CntrPar, LocalVar, objInst, ErrVar)
         
     END FUNCTION ResController
 !-------------------------------------------------------------------------------------------------------------------------------
-SUBROUTINE PlatformProportionalResControl(CntrPar, LocalVar, DebugVar, objInst)
+SUBROUTINE PlatformProportionalResControl(avrSWAP, CntrPar, LocalVar, DebugVar, objInst)
     ! Platform Pitch Proportional Resonant Control
     !       PPPR_Mode = 0, Inactive
     !       PPPR_Mode = 1, Active
 
     USE ROSCO_Types,       ONLY : ControlParameters, LocalVariables, DebugVariables, ObjectInstances
 
+    REAL(ReKi),              INTENT(INOUT) :: avrSWAP(*)
     TYPE(ControlParameters), INTENT(INOUT) :: CntrPar
     TYPE(DebugVariables),    INTENT(INOUT) :: DebugVar
     TYPE(LocalVariables),    INTENT(INOUT) :: LocalVar
@@ -1277,14 +1278,24 @@ SUBROUTINE PlatformProportionalResControl(CntrPar, LocalVar, DebugVar, objInst)
         ENDIF
 
 
-        ! Apply pitch offset equally to all blades
+        ! Apply pitch offset equally to all blades, re-apply hardware saturation,
+        ! and overwrite the avrSWAP entries that PitchControl already wrote.
         DO K = 1, LocalVar%NumBl
-            LocalVar%PitCom(K) = LocalVar%PitCom(K) + phi_control_out
+            LocalVar%PitCom(K)    = LocalVar%PitCom(K)    + phi_control_out
+            LocalVar%PitComAct(K) = LocalVar%PitComAct(K) + phi_control_out
+            LocalVar%PitComAct(K) = saturate(LocalVar%PitComAct(K), CntrPar%PC_MinPit, CntrPar%PC_MaxPit)
         END DO
+        avrSWAP(42) = LocalVar%PitComAct(1)
+        avrSWAP(43) = LocalVar%PitComAct(2)
+        avrSWAP(44) = LocalVar%PitComAct(3)
+        avrSWAP(45) = LocalVar%PitComAct(1)
 
-	! Apply generator offset
-
-	LocalVar%GenTq = LocalVar%GenTq + tau_control_out
+        ! Apply generator-torque offset, re-apply hardware saturation, and overwrite
+        ! avrSWAP(47) and VS_LastGenTrq so the modification propagates downstream.
+        LocalVar%GenTq         = LocalVar%GenTq + tau_control_out
+        LocalVar%GenTq         = saturate(LocalVar%GenTq, CntrPar%VS_MinTq, CntrPar%VS_MaxTq)
+        LocalVar%VS_LastGenTrq = LocalVar%GenTq
+        avrSWAP(47)            = MAX(0.0_DbKi, LocalVar%VS_LastGenTrq)
 
     END IF
 

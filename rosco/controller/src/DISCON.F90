@@ -121,7 +121,7 @@ IF (((LocalVar%iStatus >= 0) .OR. (LocalVar%iStatus <= -8)) .AND. (ErrVar%aviFAI
     
     ! Platform Proportional Resonant Control
     IF (CntrPar%PPPR_Mode > 0) THEN
-        CALL PlatformProportionalResControl(CntrPar, LocalVar, DebugVar, objInst)
+        CALL PlatformProportionalResControl(avrSWAP, CntrPar, LocalVar, DebugVar, objInst)
     END IF
     
     IF (CntrPar%Y_ControlMode > 0) THEN
