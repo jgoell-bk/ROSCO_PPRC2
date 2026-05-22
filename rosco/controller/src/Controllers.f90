@@ -1242,10 +1242,12 @@ SUBROUTINE PlatformProportionalResControl(avrSWAP, CntrPar, LocalVar, DebugVar, 
     REAL(DbKi)     :: phi_control_out        ! controller output [deg]
     REAL(DbKi)     :: omega_error            ! generator speed error [rad/s]
     REAL(DbKi)     :: tau_control_out        ! controller output [?]
-    REAL(DbKi)     :: phi_ref                ! platform pitch reference [rad]    
+    REAL(DbKi)     :: phi_ref                ! platform pitch reference [rad]
     REAL(DbKi)     :: omega_ref              ! generator speed reference [rad/s]
+    REAL(DbKi)     :: PtfmRDY_HP             ! High-pass-filtered platform pitch [rad]
     INTEGER(IntKi) :: K                      ! Index used for looping through blades
     REAL(DbKi)     :: StartTime = 0.0        ! Start time of closed-loop PR Control
+    REAL(DbKi), PARAMETER :: PPPR_HP_CornerFreq = 0.02_DbKi   ! HPF corner [rad/s] for PtfmRDY (well below platform mode at 0.213 rad/s)
 
     ! Initialize 
 
@@ -1265,7 +1267,14 @@ SUBROUTINE PlatformProportionalResControl(avrSWAP, CntrPar, LocalVar, DebugVar, 
         ! Compute errors for phi and omega as actual vs sinusoidal reference
 
             phi_ref = CntrPar%PPPR_amp_phi*sin(LocalVar%Time*2*PI*CntrPar%PPPR_freq_phi + CntrPar%Phi_phaseoffset*D2R)
-	    phi_error = LocalVar%PtfmRDY - phi_ref
+            ! High-pass-filter PtfmRDY to remove the steady mean tilt before differencing
+            ! with the zero-centered reference. This way the PR controller only acts on the
+            ! AC oscillation at the platform pitch frequency, not on the DC bias from steady
+            ! wind thrust (which would otherwise drive a sustained pitch offset and drain
+            ! aero torque from the rotor).
+            PtfmRDY_HP = HPFilter(LocalVar%PtfmRDY, LocalVar%DT, PPPR_HP_CornerFreq, &
+                                  LocalVar%FP, LocalVar%iStatus, LocalVar%restart, objInst%instHPF)
+            phi_error = PtfmRDY_HP - phi_ref
 
         omega_ref = CntrPar%VS_RefSpd + CntrPar%PPPR_amp_omega*sin(LocalVar%Time*2*PI*CntrPar%PPPR_freq_omega + CntrPar%Omega_phaseoffset*D2R)
             omega_error = LocalVar%GenSpeedF - omega_ref
