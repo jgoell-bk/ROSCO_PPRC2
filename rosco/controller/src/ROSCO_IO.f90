@@ -344,7 +344,7 @@ SUBROUTINE WriteRestartFile(LocalVar, CntrPar, ErrVar, objInst, RootName, size_a
         WRITE( Un, IOSTAT=ErrStat) objInst%instRes
         WRITE( Un, IOSTAT=ErrStat) objInst%instRL
         WRITE( Un, IOSTAT=ErrStat) objInst%instRes_phi
-        WRITE( Un, IOSTAT=ErrStat) objInst%instRes_tau
+        WRITE( Un, IOSTAT=ErrStat) objInst%instRes_omega
         Close ( Un )
         IF ( ErrStat /= 0 ) THEN
             ErrVar%aviFAIL = 1
@@ -690,7 +690,7 @@ SUBROUTINE ReadRestartFile(avrSWAP, LocalVar, CntrPar, objInst, PerfData, RootNa
         READ( Un, IOSTAT=ErrStat) objInst%instRes
         READ( Un, IOSTAT=ErrStat) objInst%instRL
         READ( Un, IOSTAT=ErrStat) objInst%instRes_phi
-        READ( Un, IOSTAT=ErrStat) objInst%instRes_tau
+        READ( Un, IOSTAT=ErrStat) objInst%instRes_omega
         Close ( Un )
         IF ( ErrStat /= 0 ) THEN
             ErrVar%aviFAIL = 1

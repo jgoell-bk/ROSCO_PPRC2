@@ -480,6 +480,11 @@ TYPE, PUBLIC :: LocalVariables
     TYPE(piParams)                :: piP                         ! PI parameters derived type
     TYPE(resParams)               :: resP                        ! PR parameters derived type
     TYPE(rlParams)                :: rlP                         ! Rate limiter parameters derived type
+    REAL(DbKi)                    :: PPPR_PitchFF                ! PPPR pitch feedforward command [rad]
+    REAL(DbKi)                    :: PPPR_TrqFF                  ! PPPR torque feedforward command [Nm]
+    REAL(DbKi)                    :: PtfmRDY_mean                ! Low-pass filtered mean platform pitch [rad]
+    REAL(DbKi)                    :: RotSpeed_mean               ! Low-pass filtered mean rotor speed [rad/s]
+    INTEGER(IntKi)                :: PPPR_initialized            ! 1 after PPPR mean states are initialized
 END TYPE LocalVariables
 
 TYPE, PUBLIC :: ObjectInstances
@@ -493,7 +498,7 @@ TYPE, PUBLIC :: ObjectInstances
     INTEGER(IntKi)                :: instRes                     ! PR controller instance
     INTEGER(IntKi)                :: instRL                      ! Rate limiter instance
     INTEGER(IntKi)                :: instRes_phi                 ! Resonant controller instance for platform pitch
-    INTEGER(IntKi)                :: instRes_tau                 ! Resonant controller instance for generator torque
+    INTEGER(IntKi)                :: instRes_omega               ! Resonant controller instance for generator torque
 END TYPE ObjectInstances
 
 TYPE, PUBLIC :: PerformanceData

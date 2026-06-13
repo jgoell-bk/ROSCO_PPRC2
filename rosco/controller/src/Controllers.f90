@@ -64,8 +64,11 @@ CONTAINS
         LocalVar%PC_KD = interp1d(CntrPar%PC_GS_angles, CntrPar%PC_GS_KD, LocalVar%BlPitchCMeasF, ErrVar) ! Derivative gain
         LocalVar%PC_TF = interp1d(CntrPar%PC_GS_angles, CntrPar%PC_GS_TF, LocalVar%BlPitchCMeasF, ErrVar) ! TF gains (derivative filter) !NJA - need to clarify
         
-        ! Compute the collective pitch command associated with the proportional and integral gains:
-        LocalVar%PC_PitComT = PIController(LocalVar%PC_SpdErr, LocalVar%PC_KP, LocalVar%PC_KI, LocalVar%PC_MinPit, LocalVar%PC_MaxPit, LocalVar%DT, LocalVar%BlPitch(1), LocalVar%piP, LocalVar%restart, objInst%instPI)
+        ! Compute the collective pitch command associated with the proportional and integral gains.
+        ! Shift saturation limits by -PPPR_PitchFF so the PI anti-windup doesn't integrate against the PPPR feedforward.
+        LocalVar%PC_PitComT = PIController(LocalVar%PC_SpdErr, LocalVar%PC_KP, LocalVar%PC_KI, &
+            LocalVar%PC_MinPit - LocalVar%PPPR_PitchFF, LocalVar%PC_MaxPit - LocalVar%PPPR_PitchFF, &
+            LocalVar%DT, LocalVar%BlPitch(1), LocalVar%piP, LocalVar%restart, objInst%instPI)
         DebugVar%PC_PICommand = LocalVar%PC_PitComT
 
         ! Find individual pitch control contribution
@@ -98,6 +101,10 @@ CONTAINS
             LocalVar%PC_PitComT = LocalVar%PC_PitComT + LocalVar%Fl_PitCom
         ENDIF
         
+        ! Add PPPR feedforward: PI maintains the mean, PPPR superimposes the oscillation.
+        ! This comes after the PI+Fl computation but before saturation so it passes through the actuator model.
+        LocalVar%PC_PitComT = LocalVar%PC_PitComT + LocalVar%PPPR_PitchFF
+
         ! Saturate collective pitch commands:
         LocalVar%PC_PitComT = saturate(LocalVar%PC_PitComT, LocalVar%PC_MinPit, CntrPar%PC_MaxPit)                    ! Saturate the overall command using the pitch angle limits
         LocalVar%PC_PitComT = ratelimit(LocalVar%PC_PitComT, CntrPar%PC_MinRat, CntrPar%PC_MaxRat, LocalVar%DT, LocalVar%restart, LocalVar%rlP,objInst%instRL,LocalVar%BlPitchCMeas) ! Saturate the overall command of blade K using the pitch rate limit
@@ -1239,52 +1246,62 @@ SUBROUTINE PlatformProportionalResControl(CntrPar, LocalVar, DebugVar, objInst)
     ! Local variables
     REAL(DbKi)     :: phi_error              ! platform pitch error [rad]
     REAL(DbKi)     :: phi_control_out        ! controller output [deg]
-    REAL(DbKi)     :: tau_error              ! Gen Torque error [?]
-    REAL(DbKi)     :: tau_control_out        ! controller output [?]
+    REAL(DbKi)     :: omega_error              ! rotation rate error [rad/s]
+    REAL(DbKi)     :: omega_control_out        ! controller output [rad/s]
     REAL(DbKi)     :: phi_ref                ! platform pitch reference [rad]    
-    REAL(DbKi)     :: tau_ref                ! generator torque reference [Nm]
+    REAL(DbKi)     :: omega_ref                ! rotation rate reference [rad/s]
     INTEGER(IntKi) :: K                      ! Index used for looping through blades
     REAL(DbKi)     :: StartTime = 0.0        ! Start time of closed-loop PR Control
 
-    ! Initialize 
+    ! Initialize
 
     phi_ref =           0.0_DbKi
-    tau_ref =           0.0_DbKi
+    omega_ref =         0.0_DbKi
     phi_control_out =   0.0_DbKi
-    tau_control_out =   0.0_DbKi
+    omega_control_out = 0.0_DbKi
+    LocalVar%PPPR_PitchFF = 0.0_DbKi
+    LocalVar%PPPR_TrqFF   = 0.0_DbKi
 
 
     ! If Controller Active
     IF (CntrPar%PPPR_Mode == 1 .AND. LocalVar%Time .GT. 30.0_DbKi) THEN
 
+        ! Initialize mean states on the first active call
+        IF (LocalVar%PPPR_initialized == 0) THEN
+            LocalVar%PtfmRDY_mean  = LocalVar%PtfmRDY
+            LocalVar%RotSpeed_mean = LocalVar%RotSpeed
+            LocalVar%PPPR_initialized = 1
+        END IF
+
+        ! Update mean with slow LP filter (time constant = 3 PPPR periods)
+        ! This separates the oscillatory PPPR component from the mean operating point.
+        ASSOCIATE(T_mean => 3.0_DbKi * 2.0_DbKi * PI / CntrPar%PPPR_freq_phi)
+            LocalVar%PtfmRDY_mean  = LocalVar%PtfmRDY_mean  + (LocalVar%PtfmRDY  - LocalVar%PtfmRDY_mean)  * LocalVar%DT / T_mean
+            LocalVar%RotSpeed_mean = LocalVar%RotSpeed_mean + (LocalVar%RotSpeed - LocalVar%RotSpeed_mean) * LocalVar%DT / T_mean
+        END ASSOCIATE
 
         ! Resonant controller (returns pitch offset)
         IF (LocalVar%Time .GT. StartTime) THEN
-	    
-	    ! Compute errors for phi and tau as actual vs sinusoidal reference
 
-            phi_ref = CntrPar%PPPR_amp_phi*sin(LocalVar%Time*CntrPar%PPPR_freq_phi + CntrPar%Phi_phaseoffset*D2R)
-	    phi_error = LocalVar%PtfmRDY - phi_ref
+            ! Reference sinusoid is centered on the current mean so PPPR drives
+            ! oscillations around the operating point, not toward phi=0.
+            phi_ref = LocalVar%PtfmRDY_mean + CntrPar%PPPR_amp_phi*D2R*sin(LocalVar%Time*CntrPar%PPPR_freq_phi + CntrPar%Phi_phaseoffset*D2R)
+            phi_error = LocalVar%PtfmRDY - phi_ref
 
-	    tau_ref = CntrPar%PPPR_amp_omega*sin(LocalVar%Time*CntrPar%PPPR_freq_omega + CntrPar%Omega_phaseoffset*D2R)
-            tau_error = LocalVar%GenTq - tau_ref
+            omega_ref = LocalVar%RotSpeed_mean + CntrPar%PPPR_amp_omega*sin(LocalVar%Time*CntrPar%PPPR_freq_omega + CntrPar%Omega_phaseoffset*D2R)
+            omega_error = LocalVar%RotSpeed - omega_ref
 
-            phi_control_out = ResController(phi_error, CntrPar%PPPR_CntrGains_phi(1), CntrPar%PPPR_CntrGains_phi(2), CntrPar%PPPR_freq_phi, &
-                                                      CntrPar%PC_MinPit, CntrPar%PC_MaxPit, LocalVar%DT, LocalVar%resP, LocalVar%restart, objInst%instRes_phi)
-            tau_control_out = ResController(tau_error, CntrPar%PPPR_CntrGains_omega(1), CntrPar%PPPR_CntrGains_omega(2), CntrPar%PPPR_freq_omega, &
-                                                      CntrPar%VS_MinTq, CntrPar%VS_MaxTq, LocalVar%DT, LocalVar%resP, LocalVar%restart, objInst%instRes_tau)
+            ! Use symmetric limits so the correction can be negative (reduce pitch) as well as positive
+            phi_control_out = ResController(phi_error, CntrPar%PPPR_CntrGains_phi(1), CntrPar%PPPR_CntrGains_phi(2), CntrPar%PPPR_freq_phi/(2*PI), &
+                                                      -CntrPar%PC_MaxPit, CntrPar%PC_MaxPit, LocalVar%DT, LocalVar%resP, LocalVar%restart, objInst%instRes_phi)
+            omega_control_out = ResController(omega_error, CntrPar%PPPR_CntrGains_omega(1), CntrPar%PPPR_CntrGains_omega(2), CntrPar%PPPR_freq_omega/(2*PI), &
+                                                      CntrPar%VS_MinTq, CntrPar%VS_MaxTq, LocalVar%DT, LocalVar%resP, LocalVar%restart, objInst%instRes_omega)
 
         ENDIF
 
-
-        ! Apply pitch offset equally to all blades
-        DO K = 1, LocalVar%NumBl
-            LocalVar%PitCom(K) = LocalVar%PitCom(K) + phi_control_out
-        END DO
-
-	! Apply generator offset
-
-	LocalVar%GenTq = LocalVar%GenTq + tau_control_out
+        ! Store feedforward outputs — applied in DISCON.F90 (pitch via PitchControl, torque directly)
+        LocalVar%PPPR_PitchFF = phi_control_out
+        LocalVar%PPPR_TrqFF   = omega_control_out
 
     END IF
 

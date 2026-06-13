@@ -182,6 +182,8 @@ CONTAINS
         objInst%instNotch       = 1
         objInst%instPI          = 1
         objInst%instRes         = 1
+        objInst%instRes_phi     = 1
+        objInst%instRes_omega   = 2  ! phi uses slot 1, omega uses slot 2
         objInst%instRL          = 1
         
         ! Set unused outputs to zero (See Appendix A of Bladed User's Guide):
