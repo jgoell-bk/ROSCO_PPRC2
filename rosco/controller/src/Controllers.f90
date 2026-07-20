@@ -1193,11 +1193,6 @@ SUBROUTINE StructuralControl(avrSWAP, CntrPar, LocalVar, objInst, ErrVar)
         ! Allocate local variables
         REAL(DbKi)                        :: omega                                        ! Frequency
         REAL(DbKi)                        :: a0, a1, a2, b0, b1, b2
-        REAL(DbKi)                        :: y_unsat                                      ! Unsaturated controller output
-        REAL(DbKi), PARAMETER             :: aw_gain = 0.5_DbKi                           ! Back-calculation anti-windup gain [0,1].
-                                                                                          ! 0 = no anti-windup (just output clamp, original behavior).
-                                                                                          ! 1 = maximally bleed energy from resonator state per sat event.
-                                                                                          ! 0.5 is a moderate starting value.
 
         omega = 2*PI*freq
 
@@ -1206,7 +1201,7 @@ SUBROUTINE StructuralControl(avrSWAP, CntrPar, LocalVar, objInst, ErrVar)
         b1 = -8+2*omega**2*DT**2
         b2 = 4+omega**2*DT**2
         a0 = b0*kp + 2*DT*ki
-        a1 = b1*kp
+        a1 = b1*kp 
         a2 = b2*kp - 2*DT*ki
         ! Initialize persistent variables/arrays, and set initial condition for integrator term
         IF (reset) THEN
@@ -1215,27 +1210,18 @@ SUBROUTINE StructuralControl(avrSWAP, CntrPar, LocalVar, objInst, ErrVar)
             resP%res_InputSignalLast1(inst)   = 0
             resP%res_InputSignalLast2(inst)   = 0
         ELSE
-            ! Compute unsaturated controller output (preserve y_unsat for anti-windup)
-            y_unsat = 1/b0*( -b1*resP%res_OutputSignalLast1(inst) - b2*resP%res_OutputSignalLast2(inst) &
-                              + a0*error + a1*resP%res_InputSignalLast1(inst) + a2*resP%res_InputSignalLast2(inst))
-            ResController = saturate(y_unsat, minValue, maxValue)
-
-            ! Save input signals for next time step (unchanged)
+            ResController = 1/b0*( -b1*resP%res_OutputSignalLast1(inst) - b2*resP%res_OutputSignalLast2(inst) &
+                                    + a0*error + a1*resP%res_InputSignalLast1(inst) + a2*resP%res_InputSignalLast2(inst))
+            ResController = saturate(ResController, minValue, maxValue)
+        
+            ! Save signals for next time step
             resP%res_InputSignalLast2(inst)   = resP%res_InputSignalLast1(inst)
             resP%res_InputSignalLast1(inst)   = error
-
-            ! Save output signals with back-calculation anti-windup. When the
-            ! unsaturated output exceeds the limits, pull the stored resonator
-            ! state below the saturated value by aw_gain * (y_unsat - y_sat).
-            ! This bleeds energy from the undamped resonator (poles on unit
-            ! circle) every saturation event, preventing the slow-cycle
-            ! amplitude growth that drives the OpenFAST PPPR collapse cascade.
-            ! When not saturated, sat_error = 0 and behavior is unchanged.
             resP%res_OutputSignalLast2(inst)  = resP%res_OutputSignalLast1(inst)
-            resP%res_OutputSignalLast1(inst)  = ResController - aw_gain * (y_unsat - ResController)
+            resP%res_OutputSignalLast1(inst)  = ResController
         END IF
         inst = inst + 1
-
+        
     END FUNCTION ResController
 !-------------------------------------------------------------------------------------------------------------------------------
 SUBROUTINE PlatformProportionalResControl(avrSWAP, CntrPar, LocalVar, DebugVar, objInst)
@@ -1256,12 +1242,10 @@ SUBROUTINE PlatformProportionalResControl(avrSWAP, CntrPar, LocalVar, DebugVar, 
     REAL(DbKi)     :: phi_control_out        ! controller output [deg]
     REAL(DbKi)     :: omega_error            ! generator speed error [rad/s]
     REAL(DbKi)     :: tau_control_out        ! controller output [?]
-    REAL(DbKi)     :: phi_ref                ! platform pitch reference [rad]
+    REAL(DbKi)     :: phi_ref                ! platform pitch reference [rad]    
     REAL(DbKi)     :: omega_ref              ! generator speed reference [rad/s]
-    REAL(DbKi)     :: PtfmRDY_HP             ! High-pass-filtered platform pitch [rad]
     INTEGER(IntKi) :: K                      ! Index used for looping through blades
     REAL(DbKi)     :: StartTime = 0.0        ! Start time of closed-loop PR Control
-    REAL(DbKi), PARAMETER :: PPPR_HP_CornerFreq = 0.02_DbKi   ! HPF corner [rad/s] for PtfmRDY (well below platform mode at 0.213 rad/s)
 
     ! Initialize 
 
@@ -1281,14 +1265,7 @@ SUBROUTINE PlatformProportionalResControl(avrSWAP, CntrPar, LocalVar, DebugVar, 
         ! Compute errors for phi and omega as actual vs sinusoidal reference
 
             phi_ref = CntrPar%PPPR_amp_phi*sin(LocalVar%Time*2*PI*CntrPar%PPPR_freq_phi + CntrPar%Phi_phaseoffset*D2R)
-            ! High-pass-filter PtfmRDY to remove the steady mean tilt before differencing
-            ! with the zero-centered reference. This way the PR controller only acts on the
-            ! AC oscillation at the platform pitch frequency, not on the DC bias from steady
-            ! wind thrust (which would otherwise drive a sustained pitch offset and drain
-            ! aero torque from the rotor).
-            PtfmRDY_HP = HPFilter(LocalVar%PtfmRDY, LocalVar%DT, PPPR_HP_CornerFreq, &
-                                  LocalVar%FP, LocalVar%iStatus, LocalVar%restart, objInst%instHPF)
-            phi_error = PtfmRDY_HP - phi_ref
+	    phi_error = LocalVar%PtfmRDY - phi_ref
 
         omega_ref = CntrPar%VS_RefSpd + CntrPar%PPPR_amp_omega*sin(LocalVar%Time*2*PI*CntrPar%PPPR_freq_omega + CntrPar%Omega_phaseoffset*D2R)
             omega_error = LocalVar%GenSpeedF - omega_ref
