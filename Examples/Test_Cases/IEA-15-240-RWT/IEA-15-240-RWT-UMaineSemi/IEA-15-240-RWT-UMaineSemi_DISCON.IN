@@ -248,15 +248,15 @@
 
 !------- PLATFORM PROPORTIONAL RESONANT CONTROL ---------------------------------------------------------
 2                   ! PPPR_Mode         - Platform proportional resonant control mode {0 - off, 1 - PR (additive), 2 - PIR (absolute, baselines off)}
-0.0174533           ! PPPR_amp_phi      - Amplitude for platform pitch sinusoidal reference [rad]  (N. Wei: phi_amp = 1 deg)
-0.0318310           ! PPPR_freq_phi     - Frequency for platform pitch resonant controller [Hz]  (N. Wei: freq = 0.2 rad/s. NOT UMaineSemi's 0.213 rad/s mode - his script is deliberately off-resonance)
-0.01                ! PPPR_amp_omega    - Amplitude for generator speed sinusoidal reference [rad/s]  (N. Wei: omega_amp = 0.01)
-0.0318310           ! PPPR_freq_omega   - Frequency for generator torque resonant controller [Hz]  (N. Wei: freq = 0.2 rad/s)
-0.0                 ! Phi_phaseoffset   - Phase offset for platform pitch reference [deg]  (N. Wei: no phase on phi)
--90.0               ! Omega_phaseoffset - Phase offset for generator torque reference [deg]  (N. Wei uses sin(wt - 90 deg); ROSCO adds the offset, so enter -90)
-0.00318310          ! PPPR_fz_phi       - PI zero frequency for phi PIR controller [Hz]  (N. Wei: fz = freq/10 = 0.02 rad/s)
-0.00318310          ! PPPR_fz_omega     - PI zero frequency for omega PIR controller [Hz]  (N. Wei: fz = freq/10 = 0.02 rad/s)
-0.0575959           ! PPPR_offset_phi   - Mean (DC) offset of platform pitch reference [rad]  (3.3 deg = 5.3 deg equilibrium tilt at 10 m/s MINUS N. Wei's -2 deg. His phi is a deviation from equilibrium; ROSCO PtfmRDY is absolute, so equilibrium must be added.)
-0.708333            ! PPPR_offset_omega - Mean (DC) offset of generator speed reference [rad/s]  (N. Wei: omega_offset = TSR0*Uinf/R = 8.5*10/120)
-1.33086  0.133086   ! PPPR_CntrGains_phi    - [Kp, Kr] gains for phi PIR controller [rad pitch / rad error]  (N. Wei's formula at U=10, freq=0.2, zeta=0.7: kp = 76.252 deg/rad x pi/180; kr = kp/10)
-7.5714e+07  7.5714e+06  ! PPPR_CntrGains_omega  - [Kp, Kr] gains for omega PIR controller [Nm / (rad/s)]  (N. Wei's formula: kp_Tg = 7.5714e7; kr_Tg = kp_Tg/10)
+0.0174533           ! PPPR_amp_phi      - Amplitude for platform pitch sinusoidal reference [rad]  (= 1 deg)
+0.0318310           ! PPPR_freq_phi     - Frequency for platform pitch resonant controller [Hz]  (= 0.2 rad/s; deliberately off UMaineSemi's 0.213 rad/s platform mode)
+0.01                ! PPPR_amp_omega    - Amplitude for generator speed sinusoidal reference [rad/s]
+0.0318310           ! PPPR_freq_omega   - Frequency for generator torque resonant controller [Hz]  (= 0.2 rad/s)
+0.0                 ! Phi_phaseoffset   - Phase offset for platform pitch reference [deg]
+-90.0               ! Omega_phaseoffset - Phase offset for generator torque reference [deg]  (reference waveform is sin(wt - 90 deg); ROSCO adds the offset, so enter -90)
+0.00318310          ! PPPR_fz_phi       - PI zero frequency for phi PIR controller [Hz]  (= freq/10 = 0.02 rad/s)
+0.00318310          ! PPPR_fz_omega     - PI zero frequency for omega PIR controller [Hz]  (= freq/10 = 0.02 rad/s)
+0.0575959           ! PPPR_offset_phi   - Mean (DC) offset of platform pitch reference [rad]  (3.3 deg = 5.3 deg equilibrium tilt at 10 m/s minus a 2 deg deviation. The reference frame is a deviation from equilibrium; ROSCO PtfmRDY is absolute, so the equilibrium tilt must be added.)
+0.708333            ! PPPR_offset_omega - Mean (DC) offset of generator speed reference [rad/s]  (= TSR0*Uinf/R = 8.5*10/120)
+1.33086  0.133086   ! PPPR_CntrGains_phi    - [Kp, Kr] gains for phi PIR controller [rad pitch / rad error]  (gain formula at U=10, freq=0.2, zeta=0.7: kp = 76.252 deg/rad x pi/180; kr = kp/10)
+7.5714e+07  7.5714e+06  ! PPPR_CntrGains_omega  - [Kp, Kr] gains for omega PIR controller [Nm / (rad/s)]  (gain formula: kp_Tg = 7.5714e7; kr_Tg = kp_Tg/10)

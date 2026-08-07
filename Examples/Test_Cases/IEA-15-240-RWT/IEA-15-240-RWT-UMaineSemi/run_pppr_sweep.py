@@ -21,11 +21,11 @@ Design notes
   equilibrium platform tilt at each wind speed, which the PPPR cases need for
   PPPR_offset_phi. You do not have to hand-measure the tilt.
 
-* Nathan's phi reference is a DEVIATION from the equilibrium tilt (his linear
+* The reference phi is a DEVIATION from the equilibrium tilt (the linearised
   model has phi = 0 at equilibrium), while ROSCO's PtfmRDY is absolute. Cases
   therefore specify `offset_dev_deg` and the script adds the measured tilt.
 
-* Gains follow Nathan's formula and depend on BOTH wind speed and forcing
+* Gains follow the reference gain formula and depend on BOTH wind speed and forcing
   frequency, so they are recomputed per case. Set `gains=` explicitly on a case
   to override and hold them fixed while sweeping frequency (useful for
   separating "resonance is the problem" from "the gain formula overshoots").
@@ -81,8 +81,8 @@ AD_CHANNELS = ["RtFldCp", "RtFldCt", "RtTSR", "RtVAvgxh", "RtSpeed"]
 SD_CHANNELS = ["GenPwr", "GenTq"]
 
 # ----------------------------------------------------------------------------
-# Turbine constants for Nathan's gain formula (evaluated at TSR0=8.5, beta0=0
-# from IEA15MW_Cp_Ct_Cq.mat -- see PR_control_nonlinear_sim.m).
+# Turbine constants for the gain formula (evaluated at TSR0=8.5, beta0=0
+# from IEA15MW_Cp_Ct_Cq.mat -- see MatlabSimulations/PR_control_nonlinear_sim.m).
 # ----------------------------------------------------------------------------
 TSR0 = 8.5
 RHO = 1.2
@@ -94,11 +94,12 @@ DCP_DTSR = 0.005270
 DCP_DBETA = -0.004124          # per DEGREE (data.angles is in degrees)
 
 
-def nathan_gains(U, omega, zeta=0.7, ratio=10.0):
-    """Nathan's modified-Abbas gains at wind speed U and forcing freq omega [rad/s].
+def pir_gains(U, omega, zeta=0.7, ratio=10.0):
+    """Modified-Abbas PIR gains at wind speed U and forcing freq omega [rad/s].
 
-    Returns ROSCO-native units: kp/kr in rad-pitch per rad-error (his formula is
-    deg-pitch per rad-error, hence the pi/180), kp_Tg/kr_Tg in N-m per rad/s.
+    Returns ROSCO-native units: kp/kr in rad-pitch per rad-error (the reference
+    formula is deg-pitch per rad-error, hence the pi/180), kp_Tg/kr_Tg in N-m
+    per rad/s.
     """
     A = 0.5 * RHO * math.pi * RROT**4 * U / (JR * TSR0**2) * (DCP_DTSR * TSR0 - CP0)
     B = NG / (2 * JR * TSR0**2) * RHO * math.pi * RROT**3 * U**2 * (DCP_DBETA * TSR0)
@@ -118,7 +119,7 @@ DEFAULTS = dict(
     amp_omega=0.01,         # [rad/s]
     offset_dev_deg=0.0,     # phi reference mean, as DEVIATION from equilibrium tilt
     phi_phase_deg=0.0,
-    omega_phase_deg=-90.0,  # Nathan uses sin(wt - 90deg); ROSCO adds the offset
+    omega_phase_deg=-90.0,  # reference is sin(wt - 90deg); ROSCO adds the offset
     zeta=0.7,
     ratio=10.0,             # kp/kr
     gains=None,             # None -> compute; or dict(kp=,kr=,kp_tg=,kr_tg=)
@@ -154,13 +155,13 @@ def build_cases():
         add(f"B_dev{d:+g}", "B_dc_offset", offset_dev_deg=d, amp_phi_deg=1.0, omega=0.20)
 
     # --- Sweep C: frequency. 0.213 rad/s is the UMaineSemi platform mode and the
-    #     abstract's actual target. Gains move with frequency (Nathan's formula).
+    #     abstract's actual target. Gains move with frequency (see pir_gains).
     for w in (0.15, 0.18, 0.20, 0.213, 0.24, 0.28):
         add(f"C_w{w:g}", "C_frequency", omega=w, amp_phi_deg=1.0, offset_dev_deg=0.0)
 
     # --- Sweep C2: frequency with gains PINNED at the 0.20 rad/s values, so that
     #     frequency is the only thing moving. Only meaningful if C shows a break.
-    g20 = nathan_gains(10.0, 0.20)
+    g20 = pir_gains(10.0, 0.20)
     for w in (0.213, 0.24):
         add(f"C2_w{w:g}_fixedgain", "C2_frequency_fixedgain", omega=w, gains=g20)
 
@@ -266,7 +267,7 @@ def setup_case(c):
             os.symlink(src, dst)
 
     freq_hz = c["omega"] / (2 * math.pi)
-    g = c["gains"] or nathan_gains(c["U"], c["omega"], c["zeta"], c["ratio"])
+    g = c["gains"] or pir_gains(c["U"], c["omega"], c["zeta"], c["ratio"])
     tilt = c["tilt_deg"]
     offset_phi_rad = math.radians(tilt + c["offset_dev_deg"])
     omega_ref = TSR0 * c["U"] / RROT
