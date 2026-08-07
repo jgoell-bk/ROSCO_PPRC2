@@ -1224,10 +1224,98 @@ SUBROUTINE StructuralControl(avrSWAP, CntrPar, LocalVar, objInst, ErrVar)
         
     END FUNCTION ResController
 !-------------------------------------------------------------------------------------------------------------------------------
+    REAL(DbKi) FUNCTION PIResController(error, kp, kr, fz, freq, minValue, maxValue, DT, resP, reset, inst)
+        USE ROSCO_Types, ONLY : resParams
+
+    ! Proportional-Integral-Resonant (PIR) controller, with output saturation.
+    !
+    !   C(s) = kp*(1 + wz/s) + kr*s/(s^2 + wr^2)
+    !
+    ! The integrator term gives infinite DC gain, so unlike the pure PR
+    ! controller in ResController this can track a reference with a nonzero
+    ! mean. Both platform tilt and rotor speed have nonzero equilibrium
+    ! states, which is why the PR form could not track them.
+    !
+    ! wz = 2*PI*fz is the zero that tames the integrator pole at s = 0, and
+    ! must sit well below the resonant frequency wr = 2*PI*freq (fz = freq/10
+    ! is the usual choice).
+    !
+    ! Discretized with the bilinear (Tustin) transform over the common
+    ! denominator s*(s^2 + wr^2), giving a third-order difference equation.
+    ! Coefficients follow N. Wei's MATLAB reference implementation
+    ! (PR_control_nonlinear_sim.m) exactly.
+
+        IMPLICIT NONE
+        ! Allocate Inputs
+        REAL(DbKi),    INTENT(IN)         :: error
+        REAL(DbKi),    INTENT(IN)         :: kp                                           ! Proportional gain
+        REAL(DbKi),    INTENT(IN)         :: kr                                           ! Resonant gain
+        REAL(DbKi),    INTENT(IN)         :: fz                                           ! PI zero frequency [Hz]
+        REAL(DbKi),    INTENT(IN)         :: freq                                         ! Resonant frequency [Hz]
+        REAL(DbKi),    INTENT(IN)         :: minValue
+        REAL(DbKi),    INTENT(IN)         :: maxValue
+        REAL(DbKi),    INTENT(IN)         :: DT
+        INTEGER(IntKi), INTENT(INOUT)     :: inst
+        TYPE(resParams), INTENT(INOUT)    :: resP
+        LOGICAL,    INTENT(IN)            :: reset
+        ! Allocate local variables
+        REAL(DbKi)                        :: omega                                        ! Resonant frequency [rad/s]
+        REAL(DbKi)                        :: omega_z                                      ! PI zero frequency [rad/s]
+        REAL(DbKi)                        :: b0, b1, b2
+        REAL(DbKi)                        :: n0, n1, n2, n3
+
+        omega   = 2*PI*freq
+        omega_z = 2*PI*fz
+
+        ! Denominator coefficients of the resonant term, as in ResController
+        b0 = 4+omega**2*DT**2
+        b1 = -8+2*omega**2*DT**2
+        b2 = 4+omega**2*DT**2
+
+        ! Numerator coefficients of the full PIR controller
+        n0 = kp*(1 + omega_z*DT/2)*b0 + 2*kr*DT
+        n1 = kp*(b1-b0) + kp*omega_z*DT/2*(b0+b1) - 2*kr*DT
+        n2 = kp*(b0-b1) + kp*omega_z*DT/2*(b0+b1) - 2*kr*DT
+        n3 = kp*(omega_z*DT/2 - 1)*b0 + 2*kr*DT
+
+        ! Initialize persistent variables/arrays
+        IF (reset) THEN
+            resP%res_OutputSignalLast1(inst)  = 0
+            resP%res_OutputSignalLast2(inst)  = 0
+            resP%res_OutputSignalLast3(inst)  = 0
+            resP%res_InputSignalLast1(inst)   = 0
+            resP%res_InputSignalLast2(inst)   = 0
+            resP%res_InputSignalLast3(inst)   = 0
+        ELSE
+            PIResController = 1/b0*( n0*error + n1*resP%res_InputSignalLast1(inst) &
+                                              + n2*resP%res_InputSignalLast2(inst) &
+                                              + n3*resP%res_InputSignalLast3(inst) &
+                                     - (b1-b0)*resP%res_OutputSignalLast1(inst) &
+                                     + (b1-b0)*resP%res_OutputSignalLast2(inst) &
+                                     +      b0*resP%res_OutputSignalLast3(inst))
+            PIResController = saturate(PIResController, minValue, maxValue)
+
+            ! Save signals for next time step
+            resP%res_InputSignalLast3(inst)   = resP%res_InputSignalLast2(inst)
+            resP%res_InputSignalLast2(inst)   = resP%res_InputSignalLast1(inst)
+            resP%res_InputSignalLast1(inst)   = error
+            resP%res_OutputSignalLast3(inst)  = resP%res_OutputSignalLast2(inst)
+            resP%res_OutputSignalLast2(inst)  = resP%res_OutputSignalLast1(inst)
+            resP%res_OutputSignalLast1(inst)  = PIResController
+        END IF
+        inst = inst + 1
+
+    END FUNCTION PIResController
+!-------------------------------------------------------------------------------------------------------------------------------
 SUBROUTINE PlatformProportionalResControl(avrSWAP, CntrPar, LocalVar, DebugVar, objInst)
     ! Platform Pitch Proportional Resonant Control
     !       PPPR_Mode = 0, Inactive
-    !       PPPR_Mode = 1, Active
+    !       PPPR_Mode = 1, PR controller. Adds offsets on top of the baseline
+    !                      ROSCO pitch/torque commands. Activates at t = 30 s.
+    !       PPPR_Mode = 2, PIR controller. Issues absolute pitch/torque commands
+    !                      and is the sole controller, so the baseline controllers
+    !                      must be off (PC_ControlMode = 0, VS_ControlMode = 0,
+    !                      Fl_Mode = 0, SS_Mode = 0, PS_Mode = 0). Active from t = 0.
 
     USE ROSCO_Types,       ONLY : ControlParameters, LocalVariables, DebugVariables, ObjectInstances
 
@@ -1294,6 +1382,46 @@ SUBROUTINE PlatformProportionalResControl(avrSWAP, CntrPar, LocalVar, DebugVar, 
         ! avrSWAP(47) and VS_LastGenTrq so the modification propagates downstream.
         LocalVar%GenTq         = LocalVar%GenTq + tau_control_out
         LocalVar%GenTq         = saturate(LocalVar%GenTq, CntrPar%VS_MinTq, CntrPar%VS_MaxTq)
+        LocalVar%VS_LastGenTrq = LocalVar%GenTq
+        avrSWAP(47)            = MAX(0.0_DbKi, LocalVar%VS_LastGenTrq)
+
+    END IF
+
+    ! PIR controller. Mirrors PR_control_nonlinear_sim.m: the controller output
+    ! IS the command, not an offset, so all baseline controllers must be off.
+    IF (CntrPar%PPPR_Mode == 2) THEN
+
+        ! Sinusoidal references about a nonzero mean. The PIR controller's
+        ! integrator is what lets it track the DC term.
+        phi_ref = CntrPar%PPPR_offset_phi &
+                  + CntrPar%PPPR_amp_phi*sin(LocalVar%Time*2*PI*CntrPar%PPPR_freq_phi + CntrPar%Phi_phaseoffset*D2R)
+        phi_error = LocalVar%PtfmRDY - phi_ref
+
+        omega_ref = CntrPar%PPPR_offset_omega &
+                    + CntrPar%PPPR_amp_omega*sin(LocalVar%Time*2*PI*CntrPar%PPPR_freq_omega + CntrPar%Omega_phaseoffset*D2R)
+        omega_error = LocalVar%GenSpeedF - omega_ref
+
+        phi_control_out = PIResController(phi_error, CntrPar%PPPR_CntrGains_phi(1), CntrPar%PPPR_CntrGains_phi(2), &
+                                          CntrPar%PPPR_fz_phi, CntrPar%PPPR_freq_phi, &
+                                          CntrPar%PC_MinPit, CntrPar%PC_MaxPit, LocalVar%DT, LocalVar%resP, &
+                                          LocalVar%restart, objInst%instRes_phi)
+        tau_control_out = PIResController(omega_error, CntrPar%PPPR_CntrGains_omega(1), CntrPar%PPPR_CntrGains_omega(2), &
+                                          CntrPar%PPPR_fz_omega, CntrPar%PPPR_freq_omega, &
+                                          CntrPar%VS_MinTq, CntrPar%VS_MaxTq, LocalVar%DT, LocalVar%resP, &
+                                          LocalVar%restart, objInst%instRes_tau)
+
+        ! Absolute collective pitch command
+        DO K = 1, LocalVar%NumBl
+            LocalVar%PitCom(K)    = phi_control_out
+            LocalVar%PitComAct(K) = saturate(phi_control_out, CntrPar%PC_MinPit, CntrPar%PC_MaxPit)
+        END DO
+        avrSWAP(42) = LocalVar%PitComAct(1)
+        avrSWAP(43) = LocalVar%PitComAct(2)
+        avrSWAP(44) = LocalVar%PitComAct(3)
+        avrSWAP(45) = LocalVar%PitComAct(1)
+
+        ! Absolute generator torque command
+        LocalVar%GenTq         = saturate(tau_control_out, CntrPar%VS_MinTq, CntrPar%VS_MaxTq)
         LocalVar%VS_LastGenTrq = LocalVar%GenTq
         avrSWAP(47)            = MAX(0.0_DbKi, LocalVar%VS_LastGenTrq)
 

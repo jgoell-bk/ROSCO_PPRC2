@@ -92,3 +92,24 @@ rosco/test/testing
 # OpenFAST outputs
 outputs/
 
+# OpenFAST / ROSCO run artefacts
+*.out
+*.outb
+*.MD.out
+*.HD.out
+*.HD.sum
+*.RO.dbg
+*.RO.dbg2
+*.RO.dbg3
+*.ech
+*.png
+*.pdf
+openfast.log
+
+# Parameter-sweep run directories - regenerate with run_pppr_sweep.py.
+# results.csv is deliberately NOT ignored; it is the actual data.
+Examples/Test_Cases/IEA-15-240-RWT/IEA-15-240-RWT-UMaineSemi/SweepRuns/cases/
+
+
+.github/PPPR_IMPLEMENTATION_GUIDE.md
+.github/copilot-instructions.md

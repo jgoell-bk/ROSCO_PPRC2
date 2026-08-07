@@ -10,15 +10,15 @@
 !------- CONTROLLER FLAGS -------------------------------------------------
 2                   ! F_LPFType       - 1: first-order low-pass filter, 2: second-order low-pass filter, [rad/s] (currently filters generator speed and pitch control signals
 0                   ! IPC_ControlMode - Turn Individual Pitch Control (IPC) for fatigue load reductions (pitch contribution) (0: off, 1: 1P reductions, 2: 1P+2P reductions)
-1                   ! VS_ControlMode  - Generator torque control mode in above rated conditions (0- no torque control, 1- k*omega^2 with PI transitions, 2- WSE TSR Tracking, 3- Power-based TSR Tracking, 4- Torque-based TSR Tracking)
+0                   ! VS_ControlMode  - Generator torque control mode in above rated conditions (0- no torque control, 1- k*omega^2 with PI transitions, 2- WSE TSR Tracking, 3- Power-based TSR Tracking, 4- Torque-based TSR Tracking)
 0                   ! VS_ConstPower   - Do constant power torque control, where above rated torque varies, 0 for constant torque)
 0                   ! VS_FBP          - Fixed blade pitch configuration mode (0- variable pitch (disabled), 1- constant power overspeed, 2- WSE-lookup reference tracking, 3- torque-lookup reference tracking)
-1                   ! PC_ControlMode  - Blade pitch control mode (0: No pitch, fix to fine pitch, 1: active PI blade pitch control)
+0                   ! PC_ControlMode  - Blade pitch control mode (0: No pitch, fix to fine pitch, 1: active PI blade pitch control)
 0                   ! Y_ControlMode   - Yaw control mode (0: no yaw control, 1: yaw rate control, 2: yaw-by-IPC)
-1                   ! SS_Mode         - Setpoint Smoother mode (0: no setpoint smoothing, 1: introduce setpoint smoothing)
+0                   ! SS_Mode         - Setpoint Smoother mode (0: no setpoint smoothing, 1: introduce setpoint smoothing)
 0                   ! PRC_Mode        - Power reference tracking mode (0: power control disabled, 1: lookup table from wind speed to generator speed setpoints, 2: change speed, torque, pitch to control power)
 2                   ! WE_Mode         - Wind speed estimator mode (0: One-second low pass filtered hub height wind speed, 1: Immersion and Invariance Estimator, 2: Extended Kalman Filter)
-1                   ! PS_Mode         - Pitch saturation mode (0: no pitch saturation, 1: implement pitch saturation)
+0                   ! PS_Mode         - Pitch saturation mode (0: no pitch saturation, 1: implement pitch saturation)
 0                   ! SU_Mode         - Startup mode (0: no startup procedure, 1: startup enabled)
 0                   ! SD_Mode         - Shutdown mode (0: no shutdown procedure, 1: shutdown enabled)
 0                   ! Fl_Mode         - Floating specific feedback mode (0: no nacelle velocity feedback, 1: feed back translational velocity, 2: feed back rotational velocity)
@@ -247,12 +247,16 @@
 0                   ! StC_GroupIndex    - First index for structural control group, options specified in ServoDyn summary output
 
 !------- PLATFORM PROPORTIONAL RESONANT CONTROL ---------------------------------------------------------
-0                   ! PPPR_Mode         - Platform proportional resonant control mode {0 - off, 1 - on}
-0.0872665             ! PPPR_amp_phi      - Amplitude for platform pitch sinusoidal reference [rad]  (5 deg, matches MATLAB sweep)
-0.03391             ! PPPR_freq_phi     - Frequency for platform pitch resonant controller (platform pitch natural freq = 0.213 rad/s = 0.03391 Hz) [Hz]
-0.00             ! PPPR_amp_omega    - Amplitude for generator speed sinusoidal reference [rad/s]
-0.03391             ! PPPR_freq_omega   - Frequency for generator torque resonant controller [Hz]
-0.0                 ! Phi_phaseoffset   - Phase offset for platform pitch reference [deg]
-0.0                 ! Omega_phaseoffset - Phase offset for generator torque reference [deg]
-0.5  0.0         ! PPPR_CntrGains_phi    - [Kp, Ki] gains for phi resonant controller [-]  (MATLAB-validated stable point: pure P, kr=0)
-0.0  0.0         ! PPPR_CntrGains_omega  - [Kp, Ki] gains for omega resonant controller [-]
+2                   ! PPPR_Mode         - Platform proportional resonant control mode {0 - off, 1 - PR (additive), 2 - PIR (absolute, baselines off)}
+0.0174533           ! PPPR_amp_phi      - Amplitude for platform pitch sinusoidal reference [rad]  (N. Wei: phi_amp = 1 deg)
+0.0318310           ! PPPR_freq_phi     - Frequency for platform pitch resonant controller [Hz]  (N. Wei: freq = 0.2 rad/s. NOT UMaineSemi's 0.213 rad/s mode - his script is deliberately off-resonance)
+0.01                ! PPPR_amp_omega    - Amplitude for generator speed sinusoidal reference [rad/s]  (N. Wei: omega_amp = 0.01)
+0.0318310           ! PPPR_freq_omega   - Frequency for generator torque resonant controller [Hz]  (N. Wei: freq = 0.2 rad/s)
+0.0                 ! Phi_phaseoffset   - Phase offset for platform pitch reference [deg]  (N. Wei: no phase on phi)
+-90.0               ! Omega_phaseoffset - Phase offset for generator torque reference [deg]  (N. Wei uses sin(wt - 90 deg); ROSCO adds the offset, so enter -90)
+0.00318310          ! PPPR_fz_phi       - PI zero frequency for phi PIR controller [Hz]  (N. Wei: fz = freq/10 = 0.02 rad/s)
+0.00318310          ! PPPR_fz_omega     - PI zero frequency for omega PIR controller [Hz]  (N. Wei: fz = freq/10 = 0.02 rad/s)
+0.0575959           ! PPPR_offset_phi   - Mean (DC) offset of platform pitch reference [rad]  (3.3 deg = 5.3 deg equilibrium tilt at 10 m/s MINUS N. Wei's -2 deg. His phi is a deviation from equilibrium; ROSCO PtfmRDY is absolute, so equilibrium must be added.)
+0.708333            ! PPPR_offset_omega - Mean (DC) offset of generator speed reference [rad/s]  (N. Wei: omega_offset = TSR0*Uinf/R = 8.5*10/120)
+1.33086  0.133086   ! PPPR_CntrGains_phi    - [Kp, Kr] gains for phi PIR controller [rad pitch / rad error]  (N. Wei's formula at U=10, freq=0.2, zeta=0.7: kp = 76.252 deg/rad x pi/180; kr = kp/10)
+7.5714e+07  7.5714e+06  ! PPPR_CntrGains_omega  - [Kp, Kr] gains for omega PIR controller [Nm / (rad/s)]  (N. Wei's formula: kp_Tg = 7.5714e7; kr_Tg = kp_Tg/10)
