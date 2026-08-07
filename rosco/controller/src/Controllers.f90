@@ -1242,8 +1242,8 @@ SUBROUTINE StructuralControl(avrSWAP, CntrPar, LocalVar, objInst, ErrVar)
     !
     ! Discretized with the bilinear (Tustin) transform over the common
     ! denominator s*(s^2 + wr^2), giving a third-order difference equation.
-    ! Coefficients follow N. Wei's MATLAB reference implementation
-    ! (PR_control_nonlinear_sim.m) exactly.
+    ! Coefficients follow the MATLAB reference implementation
+    ! (MatlabSimulations/PR_control_nonlinear_sim.m) exactly.
 
         IMPLICIT NONE
         ! Allocate Inputs
