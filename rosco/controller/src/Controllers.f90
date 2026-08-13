@@ -1291,7 +1291,7 @@ SUBROUTINE StructuralControl(avrSWAP, CntrPar, LocalVar, objInst, ErrVar)
 SUBROUTINE PlatformProportionalResControl(avrSWAP, CntrPar, LocalVar, DebugVar, objInst, ErrVar)
     ! Platform Pitch Proportional Resonant Control
     !       PPPR_Mode = 0, Inactive
-    !       PPPR_Mode = 1, Active
+    !       PPPR_Mode > 0, Active
 
     USE ROSCO_Types,       ONLY : ControlParameters, LocalVariables, DebugVariables, ObjectInstances, ErrorVariables
     REAL(ReKi),              INTENT(INOUT) :: avrSWAP(*)   ! The swap array, used to pass data to, and receive data from the DLL controller.
@@ -1332,19 +1332,13 @@ SUBROUTINE PlatformProportionalResControl(avrSWAP, CntrPar, LocalVar, DebugVar, 
         phi_ref = CntrPar%PPPR_offset_phi*D2R + CntrPar%PPPR_amp_phi*D2R*sin(LocalVar%Time*CntrPar%PPPR_freq_phi - CntrPar%Phi_phaseoffset*D2R)
         phi_error = LocalVar%PtfmRDY - phi_ref
 
-        omega_ref = CntrPar%PPPR_offset_omega + CntrPar%PPPR_amp_omega*sin(LocalVar%Time*CntrPar%PPPR_freq_omega - CntrPar%Omega_phaseoffset*D2R) ! changeplz
+        omega_ref = CntrPar%PPPR_offset_omega + CntrPar%PPPR_amp_omega*sin(LocalVar%Time*CntrPar%PPPR_freq_omega - CntrPar%Omega_phaseoffset*D2R)
         omega_error = LocalVar%RotSpeed - omega_ref
-        
-        ! Compute (interpolate) the gains based on previously commanded blade pitch angles and lookup table:
-        ! CHANGE THIS FOR PIR CONTROLLER changeplz
-        ! LocalVar%PC_KP = interp1d(CntrPar%PC_GS_angles, CntrPar%PC_GS_KP, LocalVar%BlPitchCMeasF, ErrVar) ! Proportional gain
-        ! LocalVar%PC_KI = interp1d(CntrPar%PC_GS_angles, CntrPar%PC_GS_KI, LocalVar%BlPitchCMeasF, ErrVar) ! Integral gain
-        ! LocalVar%PC_KD = interp1d(CntrPar%PC_GS_angles, CntrPar%PC_GS_KD, LocalVar%BlPitchCMeasF, ErrVar) ! Derivative gain
-        
+
         ! Compute the collective pitch command associated with the proportional and integral gains.
         LocalVar%PC_PitComT = PIRController(phi_error, CntrPar%PPPR_CntrGains_phi(1), CntrPar%PPPR_CntrGains_phi(2), &
             CntrPar%PPPR_freq_phi/(2*PI), CntrPar%PPPR_CntrGains_phi(3)/(2*PI), &
-            CntrPar%PC_MinPit, CntrPar%PC_MaxPit, LocalVar%DT, LocalVar%pirP, LocalVar%restart, objInst%instRes_phi)
+            LocalVar%PC_MinPit, CntrPar%PC_MaxPit, LocalVar%DT, LocalVar%pirP, LocalVar%restart, objInst%instRes_phi)
         
         DebugVar%PC_PICommand = LocalVar%PC_PitComT
         

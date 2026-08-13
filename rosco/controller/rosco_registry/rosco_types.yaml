@@ -838,13 +838,13 @@ ControlParameters:
       description: Platform Proportional Resonant Control mode {0 - off, 1 - on}
     PPPR_amp_phi:
       <<: *real
-      description: Amplitude for platform pitch sinusoidal reference [rad]
+      description: Amplitude for platform pitch sinusoidal reference [deg]
     PPPR_freq_phi:
       <<: *real
       description: Frequency for platform pitch resonant controller [rad/s]
     PPPR_offset_phi:
       <<: *real
-      description: Offset for platform pitch sinusoidal reference [rad/s] 
+      description: Offset for platform pitch sinusoidal reference [deg]
     PPPR_amp_omega:
       <<: *real
       description: Amplitude for rotation rate sinusoidal reference [rad/s]
@@ -853,25 +853,13 @@ ControlParameters:
       description: Frequency for rotation rate resonant controller [rad/s]
     PPPR_offset_omega:
       <<: *real
-      description: Offset for rotation rate sinusoidal reference [rad/s] 
+      description: Offset for rotation rate sinusoidal reference [rad/s]
     Phi_phaseoffset:
       <<: *real
       description: Phase offset for platform pitch reference [deg]
     Omega_phaseoffset:
       <<: *real
       description: Phase offset for generator torque reference [deg]
-    PPPR_fz_phi:
-      <<: *real
-      description: PI zero frequency for platform pitch PIR controller, typically PPPR_freq_phi/10 (PPPR_Mode = 2 only) [Hz]
-    PPPR_fz_omega:
-      <<: *real
-      description: PI zero frequency for generator speed PIR controller, typically PPPR_freq_omega/10 (PPPR_Mode = 2 only) [Hz]
-    PPPR_offset_phi:
-      <<: *real
-      description: Mean (DC) offset of the platform pitch reference (PPPR_Mode = 2 only) [rad]
-    PPPR_offset_omega:
-      <<: *real
-      description: Mean (DC) offset of the generator speed reference (PPPR_Mode = 2 only) [rad/s]
     PPPR_CntrGains_phi:
       <<: *real
       allocatable: True

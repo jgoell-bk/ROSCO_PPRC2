@@ -1777,10 +1777,16 @@ CONTAINS
             IF (SIZE(CntrPar%PPPR_CntrGains_phi) /= 3) THEN
                 ErrVar%aviFAIL = -1
                 ErrVar%ErrMsg = 'PPPR_CntrGains_phi must have exactly 3 values [Kp, Kr, omega_z]'
+            ELSE IF (CntrPar%PPPR_CntrGains_phi(3) <= 0.0 .OR. CntrPar%PPPR_CntrGains_phi(3) >= CntrPar%PPPR_freq_phi) THEN
+                ErrVar%aviFAIL = -1
+                ErrVar%ErrMsg = 'PPPR_CntrGains_phi(3) (omega_z) must be greater than 0 and less than PPPR_freq_phi'
             END IF
             IF (SIZE(CntrPar%PPPR_CntrGains_omega) /= 3) THEN
                 ErrVar%aviFAIL = -1
                 ErrVar%ErrMsg = 'PPPR_CntrGains_omega must have exactly 3 values [Kp, Kr, omega_z]'
+            ELSE IF (CntrPar%PPPR_CntrGains_omega(3) <= 0.0 .OR. CntrPar%PPPR_CntrGains_omega(3) >= CntrPar%PPPR_freq_omega) THEN
+                ErrVar%aviFAIL = -1
+                ErrVar%ErrMsg = 'PPPR_CntrGains_omega(3) (omega_z) must be greater than 0 and less than PPPR_freq_omega'
             END IF
         END IF
 
