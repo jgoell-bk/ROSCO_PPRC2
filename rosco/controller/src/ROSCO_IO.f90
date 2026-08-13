@@ -333,6 +333,8 @@ SUBROUTINE WriteRestartFile(LocalVar, CntrPar, ErrVar, objInst, RootName, size_a
         WRITE( Un, IOSTAT=ErrStat) LocalVar%resP%res_OutputSignalLast2
         WRITE( Un, IOSTAT=ErrStat) LocalVar%resP%res_InputSignalLast1
         WRITE( Un, IOSTAT=ErrStat) LocalVar%resP%res_InputSignalLast2
+        WRITE( Un, IOSTAT=ErrStat) LocalVar%resP%res_OutputSignalLast3
+        WRITE( Un, IOSTAT=ErrStat) LocalVar%resP%res_InputSignalLast3
         WRITE( Un, IOSTAT=ErrStat) LocalVar%rlP%LastSignal
         WRITE( Un, IOSTAT=ErrStat) objInst%instLPF
         WRITE( Un, IOSTAT=ErrStat) objInst%instSecLPF
@@ -679,6 +681,8 @@ SUBROUTINE ReadRestartFile(avrSWAP, LocalVar, CntrPar, objInst, PerfData, RootNa
         READ( Un, IOSTAT=ErrStat) LocalVar%resP%res_OutputSignalLast2
         READ( Un, IOSTAT=ErrStat) LocalVar%resP%res_InputSignalLast1
         READ( Un, IOSTAT=ErrStat) LocalVar%resP%res_InputSignalLast2
+        READ( Un, IOSTAT=ErrStat) LocalVar%resP%res_OutputSignalLast3
+        READ( Un, IOSTAT=ErrStat) LocalVar%resP%res_InputSignalLast3
         READ( Un, IOSTAT=ErrStat) LocalVar%rlP%LastSignal
         READ( Un, IOSTAT=ErrStat) objInst%instLPF
         READ( Un, IOSTAT=ErrStat) objInst%instSecLPF

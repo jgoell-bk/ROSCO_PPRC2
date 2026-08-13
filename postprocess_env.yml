@@ -1,0 +1,14 @@
+name: postprocess
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - matplotlib
+  - numpy
+  - pandas
+  - scipy
+  - seaborn
+  - jupyter
+  - ipython
+  - openfast-io=4.1

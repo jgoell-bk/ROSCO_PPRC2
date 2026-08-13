@@ -119,24 +119,7 @@ IF (((LocalVar%iStatus >= 0) .OR. (LocalVar%iStatus <= -8)) .AND. (ErrVar%aviFAI
     ! Platform Proportional Resonant Control: compute feedforward BEFORE PitchControl so the PI
     ! controller can incorporate the PPPR pitch offset without fighting it via its integrator.
     IF (CntrPar%PPPR_Mode > 0) THEN
-        CALL PlatformProportionalResControl(CntrPar, LocalVar, DebugVar, objInst)
-        ! Apply torque feedforward immediately (VS_LastGenTrq was just set by VariableSpeedControl)
-        LocalVar%VS_LastGenTrq = LocalVar%VS_LastGenTrq + LocalVar%PPPR_TrqFF
-        avrSWAP(47) = MAX(0.0_DbKi, LocalVar%VS_LastGenTrq)
-    END IF
-
-    IF (CntrPar%PC_ControlMode > 0) THEN
-        ! PitchControl adds PPPR_PitchFF to PC_PitComT before saturation and writes avrSWAP(42-45)
-        CALL PitchControl(avrSWAP, CntrPar, LocalVar, objInst, DebugVar, ErrVar)
-    ELSE IF (CntrPar%PPPR_Mode > 0) THEN
-        ! No PI controller: apply PPPR feedforward against PC_FinePit as the baseline pitch
-        LocalVar%PitComAct(1) = saturate(CntrPar%PC_FinePit + LocalVar%PPPR_PitchFF, CntrPar%PC_MinPit, CntrPar%PC_MaxPit)
-        LocalVar%PitComAct(2) = LocalVar%PitComAct(1)
-        LocalVar%PitComAct(3) = LocalVar%PitComAct(1)
-        avrSWAP(42) = LocalVar%PitComAct(1)
-        avrSWAP(43) = LocalVar%PitComAct(2)
-        avrSWAP(44) = LocalVar%PitComAct(3)
-        avrSWAP(45) = LocalVar%PitComAct(1)
+        CALL PlatformProportionalResControl(avrSWAP, CntrPar, LocalVar, DebugVar, objInst)
     END IF
     
     IF (CntrPar%Y_ControlMode > 0) THEN

@@ -835,35 +835,47 @@ ControlParameters:
     # Platform Proportional Resonant Control (PPPR)
     PPPR_Mode:
       <<: *integer
-      description: Platform Proportional Resonant Control mode {0 - off, 1 - on}
+      description: Platform Proportional Resonant Control mode {0 - off, 1 - PR (additive offsets), 2 - PIR (absolute commands, baseline controllers off)}
     PPPR_amp_phi:
       <<: *real
       description: Amplitude for platform pitch sinusoidal reference [rad]
     PPPR_freq_phi:
       <<: *real
-      description: Frequency for platform pitch resonant controller [rad/s]
+      description: Frequency for platform pitch resonant controller [Hz]
     PPPR_amp_omega:
       <<: *real
       description: Amplitude for generator torque/speed sinusoidal reference [Nm or rad/s]
     PPPR_freq_omega:
       <<: *real
-      description: Frequency for generator torque resonant controller [rad/s]
+      description: Frequency for generator torque resonant controller [Hz]
     Phi_phaseoffset:
       <<: *real
       description: Phase offset for platform pitch reference [deg]
     Omega_phaseoffset:
       <<: *real
       description: Phase offset for generator torque reference [deg]
+    PPPR_fz_phi:
+      <<: *real
+      description: PI zero frequency for platform pitch PIR controller, typically PPPR_freq_phi/10 (PPPR_Mode = 2 only) [Hz]
+    PPPR_fz_omega:
+      <<: *real
+      description: PI zero frequency for generator speed PIR controller, typically PPPR_freq_omega/10 (PPPR_Mode = 2 only) [Hz]
+    PPPR_offset_phi:
+      <<: *real
+      description: Mean (DC) offset of the platform pitch reference (PPPR_Mode = 2 only) [rad]
+    PPPR_offset_omega:
+      <<: *real
+      description: Mean (DC) offset of the generator speed reference (PPPR_Mode = 2 only) [rad/s]
     PPPR_CntrGains_phi:
       <<: *real
       allocatable: True
       dimension: (:)
-      description: PPPR controller gains [Kp, Ki] for platform pitch [-]
+      description: PPPR controller gains [Kp, Kr] for platform pitch [-]
     PPPR_CntrGains_omega:
       <<: *real
       allocatable: True
       dimension: (:)
-      description: PPPR controller gains [Kp, Ki] for generator torque [-]
+      description: PPPR controller gains [Kp, Kr] for generator torque [-]
 
     # Calculated
     PC_RtTq99:
@@ -1133,6 +1145,14 @@ resParams:
       <<: *real
       dimension: (1024)
       description: Previous input signal - second integrator
+    res_OutputSignalLast3:
+      <<: *real
+      dimension: (1024)
+      description: Previous output signal - third step (PIResController only)
+    res_InputSignalLast3:
+      <<: *real
+      dimension: (1024)
+      description: Previous input signal - third step (PIResController only)
 
 LocalVariables:
     iStatus: 
