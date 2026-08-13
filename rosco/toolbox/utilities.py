@@ -546,17 +546,15 @@ def DISCON_dict(turbine, controller, txt_filename=None):
     # Platform Proportional Resonant Control
     DISCON_dict['PPPR_Mode']            = 0
     DISCON_dict['PPPR_amp_phi']         = 0.0
-    DISCON_dict['PPPR_freq_phi']        = 0.0339        # [Hz] = 0.213 rad/s / (2*pi)
+    DISCON_dict['PPPR_freq_phi']        = 0.2
+    DISCON_dict['PPPR_offset_phi']      = 0.0
     DISCON_dict['PPPR_amp_omega']       = 0.0
-    DISCON_dict['PPPR_freq_omega']      = 0.0339        # [Hz] = 0.213 rad/s / (2*pi)
+    DISCON_dict['PPPR_freq_omega']      = 0.2
+    DISCON_dict['PPPR_offset_omega']    = 1.0
     DISCON_dict['Phi_phaseoffset']      = 0.0
     DISCON_dict['Omega_phaseoffset']    = 0.0
-    DISCON_dict['PPPR_fz_phi']          = 0.00339       # [Hz] PIR zero, = PPPR_freq_phi / 10
-    DISCON_dict['PPPR_fz_omega']        = 0.00339       # [Hz] PIR zero, = PPPR_freq_omega / 10
-    DISCON_dict['PPPR_offset_phi']      = 0.0           # [rad] mean of platform pitch reference
-    DISCON_dict['PPPR_offset_omega']    = 0.0           # [rad/s] mean of generator speed reference
-    DISCON_dict['PPPR_CntrGains_phi']   = [0.0, 0.0]
-    DISCON_dict['PPPR_CntrGains_omega'] = [0.0, 0.0]
+    DISCON_dict['PPPR_CntrGains_phi']   = [0.0, 0.0, 0.0]
+    DISCON_dict['PPPR_CntrGains_omega'] = [0.0, 0.0, 0.0]
     # ------- FILTERS -------
     DISCON_dict['F_LPFCornerFreq']	    = turbine.bld_edgewise_freq * 1/4
     DISCON_dict['F_LPFDamping']		    = controller.F_LPFDamping

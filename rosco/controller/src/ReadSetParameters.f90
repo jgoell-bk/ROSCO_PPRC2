@@ -185,8 +185,6 @@ CONTAINS
         objInst%instRes_phi     = 1
         objInst%instRes_omega   = 2  ! phi uses slot 1, omega uses slot 2
         objInst%instRL          = 1
-        objInst%instRes_phi     = 1
-        objInst%instRes_tau     = 2   ! must differ from instRes_phi: both index the same resP arrays
         
         ! Set unused outputs to zero (See Appendix A of Bladed User's Guide):
         avrSWAP(35) = 1.0 ! Generator contactor status: 1=main (high speed) variable-speed generator
@@ -656,16 +654,14 @@ CONTAINS
         CALL ParseInput(FileLines,  'PPPR_Mode',            CntrPar%PPPR_Mode,          accINFILE(1), ErrVar, UnEc=UnEc)
         CALL ParseInput(FileLines,  'PPPR_amp_phi',         CntrPar%PPPR_amp_phi,       accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
         CALL ParseInput(FileLines,  'PPPR_freq_phi',        CntrPar%PPPR_freq_phi,      accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
+        CALL ParseInput(FileLines,  'PPPR_offset_phi',      CntrPar%PPPR_offset_phi,    accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
         CALL ParseInput(FileLines,  'PPPR_amp_omega',       CntrPar%PPPR_amp_omega,     accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
         CALL ParseInput(FileLines,  'PPPR_freq_omega',      CntrPar%PPPR_freq_omega,    accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
+        CALL ParseInput(FileLines,  'PPPR_offset_omega',    CntrPar%PPPR_offset_omega,  accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
         CALL ParseInput(FileLines,  'Phi_phaseoffset',      CntrPar%Phi_phaseoffset,    accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
         CALL ParseInput(FileLines,  'Omega_phaseoffset',    CntrPar%Omega_phaseoffset,  accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
-        CALL ParseInput(FileLines,  'PPPR_fz_phi',          CntrPar%PPPR_fz_phi,        accINFILE(1), ErrVar, CntrPar%PPPR_Mode /= 2, UnEc)
-        CALL ParseInput(FileLines,  'PPPR_fz_omega',        CntrPar%PPPR_fz_omega,      accINFILE(1), ErrVar, CntrPar%PPPR_Mode /= 2, UnEc)
-        CALL ParseInput(FileLines,  'PPPR_offset_phi',      CntrPar%PPPR_offset_phi,    accINFILE(1), ErrVar, CntrPar%PPPR_Mode /= 2, UnEc)
-        CALL ParseInput(FileLines,  'PPPR_offset_omega',    CntrPar%PPPR_offset_omega,  accINFILE(1), ErrVar, CntrPar%PPPR_Mode /= 2, UnEc)
-        CALL ParseAry(  FileLines,  'PPPR_CntrGains_phi',   CntrPar%PPPR_CntrGains_phi,   2,          accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
-        CALL ParseAry(  FileLines,  'PPPR_CntrGains_omega', CntrPar%PPPR_CntrGains_omega, 2,          accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
+        CALL ParseAry(  FileLines,  'PPPR_CntrGains_phi',   CntrPar%PPPR_CntrGains_phi,   3,          accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
+        CALL ParseAry(  FileLines,  'PPPR_CntrGains_omega', CntrPar%PPPR_CntrGains_omega, 3,          accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
         IF (ErrVar%aviFAIL < 0) RETURN
 
         ! Open loop cable, structural control, needs number of groups
@@ -1778,34 +1774,13 @@ CONTAINS
                 ErrVar%aviFAIL = -1
                 ErrVar%ErrMsg = 'PPPR_freq_omega must be greater than 0'
             END IF
-            IF (SIZE(CntrPar%PPPR_CntrGains_phi) /= 2) THEN
+            IF (SIZE(CntrPar%PPPR_CntrGains_phi) /= 3) THEN
                 ErrVar%aviFAIL = -1
-                ErrVar%ErrMsg = 'PPPR_CntrGains_phi must have exactly 2 values [Kp, Ki]'
+                ErrVar%ErrMsg = 'PPPR_CntrGains_phi must have exactly 3 values [Kp, Kr, omega_z]'
             END IF
-            IF (SIZE(CntrPar%PPPR_CntrGains_omega) /= 2) THEN
+            IF (SIZE(CntrPar%PPPR_CntrGains_omega) /= 3) THEN
                 ErrVar%aviFAIL = -1
-                ErrVar%ErrMsg = 'PPPR_CntrGains_omega must have exactly 2 values [Kp, Ki]'
-            END IF
-        END IF
-
-        ! --- PIR variant: zero must sit below the resonant frequency, and the
-        !     baseline controllers must be off since PIR issues absolute commands ---
-        IF (CntrPar%PPPR_Mode == 2) THEN
-            IF (CntrPar%PPPR_fz_phi <= 0.0 .OR. CntrPar%PPPR_fz_phi >= CntrPar%PPPR_freq_phi) THEN
-                ErrVar%aviFAIL = -1
-                ErrVar%ErrMsg = 'PPPR_fz_phi must be greater than 0 and less than PPPR_freq_phi'
-            END IF
-            IF (CntrPar%PPPR_fz_omega <= 0.0 .OR. CntrPar%PPPR_fz_omega >= CntrPar%PPPR_freq_omega) THEN
-                ErrVar%aviFAIL = -1
-                ErrVar%ErrMsg = 'PPPR_fz_omega must be greater than 0 and less than PPPR_freq_omega'
-            END IF
-            IF (CntrPar%PC_ControlMode /= 0 .OR. CntrPar%VS_ControlMode /= 0) THEN
-                ErrVar%aviFAIL = -1
-                ErrVar%ErrMsg = 'PPPR_Mode = 2 issues absolute commands and must be the only controller: set PC_ControlMode = 0 and VS_ControlMode = 0'
-            END IF
-            IF (CntrPar%Fl_Mode /= 0 .OR. CntrPar%SS_Mode /= 0 .OR. CntrPar%PS_Mode /= 0) THEN
-                ErrVar%aviFAIL = -1
-                ErrVar%ErrMsg = 'PPPR_Mode = 2 requires Fl_Mode = 0, SS_Mode = 0 and PS_Mode = 0'
+                ErrVar%ErrMsg = 'PPPR_CntrGains_omega must have exactly 3 values [Kp, Kr, omega_z]'
             END IF
         END IF
 

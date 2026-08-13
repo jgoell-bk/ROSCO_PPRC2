@@ -220,19 +220,17 @@ TYPE, PUBLIC :: ControlParameters
     INTEGER(IntKi)                :: StC_Mode                    ! Flag for StC Control
     INTEGER(IntKi)                :: StC_Group_N                 ! Number of cable control groups
     INTEGER(IntKi), DIMENSION(:), ALLOCATABLE     :: StC_GroupIndex              ! Cable control group indices
-    INTEGER(IntKi)                :: PPPR_Mode                   ! Platform Proportional Resonant Control mode {0 - off, 1 - PR (additive offsets), 2 - PIR (absolute commands, baseline controllers off)}
-    REAL(DbKi)                    :: PPPR_amp_phi                ! Amplitude for platform pitch sinusoidal reference [rad]
-    REAL(DbKi)                    :: PPPR_freq_phi               ! Frequency for platform pitch resonant controller [Hz]
-    REAL(DbKi)                    :: PPPR_amp_omega              ! Amplitude for generator torque/speed sinusoidal reference [Nm or rad/s]
-    REAL(DbKi)                    :: PPPR_freq_omega             ! Frequency for generator torque resonant controller [Hz]
+    INTEGER(IntKi)                :: PPPR_Mode                   ! Platform Proportional Resonant Control mode {0 - off, 1 - on}
+    REAL(DbKi)                    :: PPPR_amp_phi                ! Amplitude for platform pitch sinusoidal reference [deg]
+    REAL(DbKi)                    :: PPPR_offset_phi             ! Offset for platform pitch sinusoidal reference [deg]
+    REAL(DbKi)                    :: PPPR_freq_phi               ! Frequency for platform pitch resonant controller [rad/s]
+    REAL(DbKi)                    :: PPPR_amp_omega              ! Amplitude for rotation rate sinusoidal reference [rad/s]
+    REAL(DbKi)                    :: PPPR_offset_omega           ! Offset for rotation rate sinusoidal reference [rad/s]    
+    REAL(DbKi)                    :: PPPR_freq_omega             ! Frequency for rotation rate resonant controller [rad/s]
     REAL(DbKi)                    :: Phi_phaseoffset             ! Phase offset for platform pitch reference [deg]
     REAL(DbKi)                    :: Omega_phaseoffset           ! Phase offset for generator torque reference [deg]
-    REAL(DbKi)                    :: PPPR_fz_phi                 ! PI zero frequency for platform pitch PIR controller, typically PPPR_freq_phi/10 (PPPR_Mode = 2 only) [Hz]
-    REAL(DbKi)                    :: PPPR_fz_omega               ! PI zero frequency for generator speed PIR controller, typically PPPR_freq_omega/10 (PPPR_Mode = 2 only) [Hz]
-    REAL(DbKi)                    :: PPPR_offset_phi             ! Mean (DC) offset of the platform pitch reference (PPPR_Mode = 2 only) [rad]
-    REAL(DbKi)                    :: PPPR_offset_omega           ! Mean (DC) offset of the generator speed reference (PPPR_Mode = 2 only) [rad/s]
-    REAL(DbKi), DIMENSION(:), ALLOCATABLE     :: PPPR_CntrGains_phi          ! PPPR controller gains [Kp, Kr] for platform pitch [-]
-    REAL(DbKi), DIMENSION(:), ALLOCATABLE     :: PPPR_CntrGains_omega        ! PPPR controller gains [Kp, Kr] for generator torque [-]
+    REAL(DbKi), DIMENSION(:), ALLOCATABLE     :: PPPR_CntrGains_phi          ! PPPR controller gains [Kp, Kr, omega_z] for platform pitch [-, -, rad/s]
+    REAL(DbKi), DIMENSION(:), ALLOCATABLE     :: PPPR_CntrGains_omega        ! PPPR controller gains [Kp, Kr, omega_z] for generator torque [-, -, rad/s]
     REAL(DbKi)                    :: PC_RtTq99                   ! 99% of the rated torque value, using for switching between pitch and torque control, [Nm].
     REAL(DbKi)                    :: VS_MaxOMTq                  ! Maximum torque at the end of the below-rated region 2, [Nm]
     REAL(DbKi)                    :: VS_MinOMTq                  ! Minimum torque at the beginning of the below-rated region 2, [Nm]
@@ -314,9 +312,16 @@ TYPE, PUBLIC :: resParams
     REAL(DbKi), DIMENSION(1024)     :: res_OutputSignalLast2       ! Previous output signal - second integrator
     REAL(DbKi), DIMENSION(1024)     :: res_InputSignalLast1        ! Previous input signal
     REAL(DbKi), DIMENSION(1024)     :: res_InputSignalLast2        ! Previous input signal - second integrator
-    REAL(DbKi), DIMENSION(1024)     :: res_OutputSignalLast3       ! Previous output signal - third step (PIResController only)
-    REAL(DbKi), DIMENSION(1024)     :: res_InputSignalLast3        ! Previous input signal - third step (PIResController only)
 END TYPE resParams
+
+TYPE, PUBLIC :: pirParams
+    REAL(DbKi), DIMENSION(1024)     :: pir_OutputSignalLast1       ! Previous output signal
+    REAL(DbKi), DIMENSION(1024)     :: pir_OutputSignalLast2 
+    REAL(DbKi), DIMENSION(1024)     :: pir_OutputSignalLast3      ! Previous output signal - second integrator
+    REAL(DbKi), DIMENSION(1024)     :: pir_InputSignalLast1        ! Previous input signal
+    REAL(DbKi), DIMENSION(1024)     :: pir_InputSignalLast2 
+    REAL(DbKi), DIMENSION(1024)     :: pir_InputSignalLast3       ! Previous input signal - second integrator
+END TYPE pirParams
 
 TYPE, PUBLIC :: LocalVariables
     INTEGER(IntKi)                :: iStatus                     ! Initialization status
@@ -485,12 +490,8 @@ TYPE, PUBLIC :: LocalVariables
     TYPE(FilterParameters)        :: FP                          ! Filter parameters derived type
     TYPE(piParams)                :: piP                         ! PI parameters derived type
     TYPE(resParams)               :: resP                        ! PR parameters derived type
+    TYPE(pirParams)               :: pirP                        ! PIR parameters derived type
     TYPE(rlParams)                :: rlP                         ! Rate limiter parameters derived type
-    REAL(DbKi)                    :: PPPR_PitchFF                ! PPPR pitch feedforward command [rad]
-    REAL(DbKi)                    :: PPPR_TrqFF                  ! PPPR torque feedforward command [Nm]
-    REAL(DbKi)                    :: PtfmRDY_mean                ! Low-pass filtered mean platform pitch [rad]
-    REAL(DbKi)                    :: RotSpeed_mean               ! Low-pass filtered mean rotor speed [rad/s]
-    INTEGER(IntKi)                :: PPPR_initialized            ! 1 after PPPR mean states are initialized
 END TYPE LocalVariables
 
 TYPE, PUBLIC :: ObjectInstances
