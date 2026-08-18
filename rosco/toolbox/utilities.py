@@ -553,8 +553,8 @@ def DISCON_dict(turbine, controller, txt_filename=None):
     DISCON_dict['PPPR_offset_omega']    = 1.0
     DISCON_dict['Phi_phaseoffset']      = 0.0
     DISCON_dict['Omega_phaseoffset']    = 0.0
-    DISCON_dict['PPPR_CntrGains_phi']   = [0.0, 0.0, 0.0, 0.0]
-    DISCON_dict['PPPR_CntrGains_omega'] = [0.0, 0.0, 0.0, 0.0]
+    DISCON_dict['PPPR_CntrGains_phi']   = [0.0, 0.0, 0.0]
+    DISCON_dict['PPPR_CntrGains_omega'] = [0.0, 0.0, 0.0]
     # ------- FILTERS -------
     DISCON_dict['F_LPFCornerFreq']	    = turbine.bld_edgewise_freq * 1/4
     DISCON_dict['F_LPFDamping']		    = controller.F_LPFDamping

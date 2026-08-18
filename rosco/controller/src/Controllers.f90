@@ -1227,21 +1227,19 @@ SUBROUTINE StructuralControl(avrSWAP, CntrPar, LocalVar, objInst, ErrVar)
     END FUNCTION ResController
 
    !-------------------------------------------------------------------------------------------------------------------------------
-    REAL(DbKi) FUNCTION PIRController(error, kp, kr, freq, freqz, freqc, minValue, maxValue, DT, pirP, reset, inst)
+    REAL(DbKi) FUNCTION PIRController(error, kp, kr, freq, freqz, minValue, maxValue, DT, pirP, reset, inst)
         USE ROSCO_Types, ONLY : pirParams
 
     ! PIR controller, with output saturation
     !
-    !   C(s) = kp*(1 + wz/s) + kr*s/(s^2 + 2*wc*s + wr^2)
+    !   C(s) = kp*(1 + wz/s) + kr*s/(s^2 + wr^2)
     !
-    ! The resonant term is a damped ("quasi-resonant") filter rather than an
-    ! ideal undamped one: wc > 0 moves its poles off the unit circle after
-    ! discretization, trading a slightly reduced (but still very high) peak
-    ! gain at the resonant frequency wr for guaranteed closed-loop stability.
-    ! An ideal (wc = 0) resonant term is only marginally stable and prone to
-    ! diverging once it sits in a real feedback loop with broadband
-    ! disturbances (e.g. wave-driven platform motion) rather than a pure
-    ! single-frequency input.
+    ! Ideal (undamped) resonant term: its poles sit exactly on the unit
+    ! circle after discretization, giving very high (in principle infinite)
+    ! gain at the resonant frequency wr, but only marginal closed-loop
+    ! stability -- prone to diverging once it sits in a real feedback loop
+    ! with broadband disturbances (e.g. wave-driven platform motion) rather
+    ! than a pure single-frequency input.
 
         IMPLICIT NONE
         ! Allocate Inputs
@@ -1250,7 +1248,6 @@ SUBROUTINE StructuralControl(avrSWAP, CntrPar, LocalVar, objInst, ErrVar)
         REAL(DbKi),    INTENT(IN)         :: kr
         REAL(DbKi),    INTENT(IN)         :: freq
         REAL(DbKi),    INTENT(IN)         :: freqz
-        REAL(DbKi),    INTENT(IN)         :: freqc
         REAL(DbKi),    INTENT(IN)         :: minValue
         REAL(DbKi),    INTENT(IN)         :: maxValue
         REAL(DbKi),    INTENT(IN)         :: DT
@@ -1260,33 +1257,23 @@ SUBROUTINE StructuralControl(avrSWAP, CntrPar, LocalVar, objInst, ErrVar)
         ! Allocate local variables
         REAL(DbKi)                        :: omega                                        ! Resonant frequency [rad/s]
         REAL(DbKi)                        :: omegaz                                       ! PI zero frequency [rad/s]
-        REAL(DbKi)                        :: omegac                                       ! Resonant damping bandwidth [rad/s]
         REAL(DbKi)                        :: K, K2, K3                                    ! Bilinear-transform substitution powers
         REAL(DbKi)                        :: n3, n2, n1, n0                               ! Continuous-time numerator coefficients
-        REAL(DbKi)                        :: d3, d2, d1, d0                               ! Continuous-time denominator coefficients
+        REAL(DbKi)                        :: d1                                           ! Continuous-time denominator coefficient (D(s) = s^3 + d1*s)
         REAL(DbKi)                        :: a0, a1, a2, a3                               ! Discrete-time numerator coefficients
         REAL(DbKi)                        :: b0, b1, b2, b3                               ! Discrete-time denominator coefficients
 
         omega  = 2*PI*freq    ! Hz to rad/s
         omegaz = 2*PI*freqz   ! Hz to rad/s, consistent with freq convention
-        omegac = 2*PI*freqc   ! Hz to rad/s, consistent with freq convention
 
-        !! Continuous-time coefficients: N(s) = kp*(s+wz)*(s^2+2*wc*s+wr^2) + kr*s^2, D(s) = s*(s^2+2*wc*s+wr^2)
+        !! Continuous-time coefficients: N(s) = kp*(s+wz)*(s^2+wr^2) + kr*s^2, D(s) = s*(s^2+wr^2) = s^3 + wr^2*s
         n3 = kp
-        n2 = kp*(2*omegac+omegaz) + kr
-        n1 = kp*(omega**2 + 2*omegac*omegaz)
+        n2 = kp*omegaz + kr
+        n1 = kp*omega**2
         n0 = kp*omegaz*omega**2
-        d3 = 1.0_DbKi
-        d2 = 2*omegac
         d1 = omega**2
-        d0 = 0.0_DbKi
 
-        !! Bilinear (Tustin) transform of a general cubic c3*s^3+c2*s^2+c1*s+c0, with K = 2/DT:
-        !!   P3 =  c3*K^3 + c2*K^2 + c1*K + c0
-        !!   P2 = -3c3*K^3 - c2*K^2 + c1*K + 3c0
-        !!   P1 =  3c3*K^3 - c2*K^2 - c1*K + 3c0
-        !!   P0 = -c3*K^3 + c2*K^2 - c1*K + c0
-        !! (At wc = 0 this reduces exactly to the original undamped Tustin-RC coefficients.)
+        !! Bilinear (Tustin) transform, K = 2/DT (D(s) has no s^2 or constant term):
         K  = 2/DT
         K2 = K*K
         K3 = K2*K
@@ -1296,10 +1283,10 @@ SUBROUTINE StructuralControl(avrSWAP, CntrPar, LocalVar, objInst, ErrVar)
         a2 = 3*n3*K3 - n2*K2 - n1*K + 3*n0
         a3 = -n3*K3 + n2*K2 - n1*K + n0
 
-        b0 = d3*K3 + d2*K2 + d1*K + d0
-        b1 = -3*d3*K3 - d2*K2 + d1*K + 3*d0
-        b2 = 3*d3*K3 - d2*K2 - d1*K + 3*d0
-        b3 = -d3*K3 + d2*K2 - d1*K + d0
+        b0 = K3 + d1*K
+        b1 = -3*K3 + d1*K
+        b2 = -b1
+        b3 = -b0
 
         ! Initialize persistent variables/arrays, and set initial condition for integrator term
         IF (reset) THEN
@@ -1376,7 +1363,7 @@ SUBROUTINE PlatformProportionalResControl(avrSWAP, CntrPar, LocalVar, DebugVar, 
 
         ! Compute the collective pitch command associated with the proportional and integral gains.
         LocalVar%PC_PitComT = PIRController(phi_error, CntrPar%PPPR_CntrGains_phi(1), CntrPar%PPPR_CntrGains_phi(2), &
-            CntrPar%PPPR_freq_phi/(2*PI), CntrPar%PPPR_CntrGains_phi(3)/(2*PI), CntrPar%PPPR_CntrGains_phi(4)/(2*PI), &
+            CntrPar%PPPR_freq_phi/(2*PI), CntrPar%PPPR_CntrGains_phi(3)/(2*PI), &
             LocalVar%PC_MinPit, CntrPar%PC_MaxPit, LocalVar%DT, LocalVar%pirP, LocalVar%restart, objInst%instRes_phi)
 
         DebugVar%PC_PICommand = LocalVar%PC_PitComT
@@ -1498,7 +1485,7 @@ SUBROUTINE PlatformProportionalResControl(avrSWAP, CntrPar, LocalVar, DebugVar, 
 
         ! PIR controller
         LocalVar%GenTq = PIRController(omega_error, CntrPar%PPPR_CntrGains_omega(1), CntrPar%PPPR_CntrGains_omega(2), &
-            CntrPar%PPPR_freq_omega/(2*PI), CntrPar%PPPR_CntrGains_omega(3)/(2*PI), CntrPar%PPPR_CntrGains_omega(4)/(2*PI), &
+            CntrPar%PPPR_freq_omega/(2*PI), CntrPar%PPPR_CntrGains_omega(3)/(2*PI), &
             CntrPar%VS_MinTq, CntrPar%VS_MaxTq, LocalVar%DT, LocalVar%pirP, LocalVar%restart, objInst%instRes_omega)
 
         ! Saturate control input to Region 3 constant-power value if FBP mode is set to constant-power overspeed (no need for explicit transition region)

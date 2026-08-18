@@ -864,12 +864,12 @@ ControlParameters:
       <<: *real
       allocatable: True
       dimension: (:)
-      description: PPPR controller gains [Kp, Kr, omega_z, omega_c] for platform pitch [-, -, rad/s, rad/s]
+      description: PPPR controller gains [Kp, Kr, omega_z] for platform pitch [-, -, rad/s]
     PPPR_CntrGains_omega:
       <<: *real
       allocatable: True
       dimension: (:)
-      description: PPPR controller gains [Kp, Kr, omega_z, omega_c] for rotation rate [-, -, rad/s, rad/s]
+      description: PPPR controller gains [Kp, Kr, omega_z] for rotation rate [-, -, rad/s]
 
     # Calculated
     PC_RtTq99:
