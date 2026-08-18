@@ -660,8 +660,8 @@ CONTAINS
         CALL ParseInput(FileLines,  'PPPR_offset_omega',    CntrPar%PPPR_offset_omega,  accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
         CALL ParseInput(FileLines,  'Phi_phaseoffset',      CntrPar%Phi_phaseoffset,    accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
         CALL ParseInput(FileLines,  'Omega_phaseoffset',    CntrPar%Omega_phaseoffset,  accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
-        CALL ParseAry(  FileLines,  'PPPR_CntrGains_phi',   CntrPar%PPPR_CntrGains_phi,   3,          accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
-        CALL ParseAry(  FileLines,  'PPPR_CntrGains_omega', CntrPar%PPPR_CntrGains_omega, 3,          accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
+        CALL ParseAry(  FileLines,  'PPPR_CntrGains_phi',   CntrPar%PPPR_CntrGains_phi,   4,          accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
+        CALL ParseAry(  FileLines,  'PPPR_CntrGains_omega', CntrPar%PPPR_CntrGains_omega, 4,          accINFILE(1), ErrVar, CntrPar%PPPR_Mode == 0, UnEc)
         IF (ErrVar%aviFAIL < 0) RETURN
 
         ! Open loop cable, structural control, needs number of groups
@@ -1774,19 +1774,25 @@ CONTAINS
                 ErrVar%aviFAIL = -1
                 ErrVar%ErrMsg = 'PPPR_freq_omega must be greater than 0'
             END IF
-            IF (SIZE(CntrPar%PPPR_CntrGains_phi) /= 3) THEN
+            IF (SIZE(CntrPar%PPPR_CntrGains_phi) /= 4) THEN
                 ErrVar%aviFAIL = -1
-                ErrVar%ErrMsg = 'PPPR_CntrGains_phi must have exactly 3 values [Kp, Kr, omega_z]'
+                ErrVar%ErrMsg = 'PPPR_CntrGains_phi must have exactly 4 values [Kp, Kr, omega_z, omega_c]'
             ELSE IF (CntrPar%PPPR_CntrGains_phi(3) <= 0.0 .OR. CntrPar%PPPR_CntrGains_phi(3) >= CntrPar%PPPR_freq_phi) THEN
                 ErrVar%aviFAIL = -1
                 ErrVar%ErrMsg = 'PPPR_CntrGains_phi(3) (omega_z) must be greater than 0 and less than PPPR_freq_phi'
-            END IF
-            IF (SIZE(CntrPar%PPPR_CntrGains_omega) /= 3) THEN
+            ELSE IF (CntrPar%PPPR_CntrGains_phi(4) <= 0.0) THEN
                 ErrVar%aviFAIL = -1
-                ErrVar%ErrMsg = 'PPPR_CntrGains_omega must have exactly 3 values [Kp, Kr, omega_z]'
+                ErrVar%ErrMsg = 'PPPR_CntrGains_phi(4) (omega_c, resonant damping bandwidth) must be greater than 0; an undamped (omega_c = 0) resonant term is only marginally stable'
+            END IF
+            IF (SIZE(CntrPar%PPPR_CntrGains_omega) /= 4) THEN
+                ErrVar%aviFAIL = -1
+                ErrVar%ErrMsg = 'PPPR_CntrGains_omega must have exactly 4 values [Kp, Kr, omega_z, omega_c]'
             ELSE IF (CntrPar%PPPR_CntrGains_omega(3) <= 0.0 .OR. CntrPar%PPPR_CntrGains_omega(3) >= CntrPar%PPPR_freq_omega) THEN
                 ErrVar%aviFAIL = -1
                 ErrVar%ErrMsg = 'PPPR_CntrGains_omega(3) (omega_z) must be greater than 0 and less than PPPR_freq_omega'
+            ELSE IF (CntrPar%PPPR_CntrGains_omega(4) <= 0.0) THEN
+                ErrVar%aviFAIL = -1
+                ErrVar%ErrMsg = 'PPPR_CntrGains_omega(4) (omega_c, resonant damping bandwidth) must be greater than 0; an undamped (omega_c = 0) resonant term is only marginally stable'
             END IF
         END IF
 
