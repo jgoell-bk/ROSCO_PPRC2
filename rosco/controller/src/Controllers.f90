@@ -1378,7 +1378,7 @@ SUBROUTINE PlatformProportionalResControl(avrSWAP, CntrPar, LocalVar, DebugVar, 
         LocalVar%PC_PitComT = PIRController(phi_error, CntrPar%PPPR_CntrGains_phi(1), CntrPar%PPPR_CntrGains_phi(2), &
             CntrPar%PPPR_freq_phi/(2*PI), CntrPar%PPPR_CntrGains_phi(3)/(2*PI), CntrPar%PPPR_CntrGains_phi(4)/(2*PI), &
             LocalVar%PC_MinPit, CntrPar%PC_MaxPit, LocalVar%DT, LocalVar%pirP, LocalVar%restart, objInst%instRes_phi)
-        
+
         DebugVar%PC_PICommand = LocalVar%PC_PitComT
         
         ! Pitch Saturation

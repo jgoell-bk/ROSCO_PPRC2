@@ -1140,6 +1140,32 @@ resParams:
       dimension: (1024)
       description: Previous input signal - second integrator
 
+pirParams:
+    pir_OutputSignalLast1:
+      <<: *real
+      dimension: (1024)
+      description: Previous output signal
+    pir_OutputSignalLast2:
+      <<: *real
+      dimension: (1024)
+      description: Previous output signal
+    pir_OutputSignalLast3:
+      <<: *real
+      dimension: (1024)
+      description: Previous output signal - second integrator
+    pir_InputSignalLast1:
+      <<: *real
+      dimension: (1024)
+      description: Previous input signal
+    pir_InputSignalLast2:
+      <<: *real
+      dimension: (1024)
+      description: Previous input signal
+    pir_InputSignalLast3:
+      <<: *real
+      dimension: (1024)
+      description: Previous input signal - second integrator
+
 LocalVariables:
     iStatus: 
       <<: *integer 
@@ -1661,6 +1687,10 @@ LocalVariables:
       <<: *derived_type
       id: resParams
       description: PR parameters derived type
+    pirP:
+      <<: *derived_type
+      id: pirParams
+      description: PIR parameters derived type
     rlP:
       <<: *derived_type
       id: rlParams
@@ -1697,7 +1727,7 @@ ObjectInstances:
   instRes_phi:
     <<: *integer
     description: Resonant controller instance for platform pitch
-  instRes_tau:
+  instRes_omega:
     <<: *integer
     description: Resonant controller instance for generator torque
 
