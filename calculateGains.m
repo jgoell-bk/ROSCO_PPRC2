@@ -12,6 +12,7 @@ if nargin == 0
     Uinf    = 10; % wind speed (m/s) - rated is 10.75 m/s
     freq    = 0.1; % desired forcing frequency (rad/s)
     zeta    = 0.7; % desired damping ratio [-]
+    kp_kr_ratio = 10; % somewhat arbitrary but can be theoretically justified
 end
 
 fz = freq/10; % desired PI controller zero frequency (rad/s)
