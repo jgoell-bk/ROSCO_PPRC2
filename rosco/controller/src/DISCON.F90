@@ -114,14 +114,15 @@ IF (((LocalVar%iStatus >= 0) .OR. (LocalVar%iStatus <= -8)) .AND. (ErrVar%aviFAI
     CALL ComputeVariablesSetpoints(CntrPar, LocalVar, objInst, DebugVar, ErrVar)
     CALL StateMachine(CntrPar, LocalVar)
     CALL SetpointSmoother(LocalVar, CntrPar, objInst)
-    CALL VariableSpeedControl(avrSWAP, CntrPar, LocalVar, objInst, ErrVar)
-    IF (CntrPar%PC_ControlMode > 0) THEN
-        CALL PitchControl(avrSWAP, CntrPar, LocalVar, objInst, DebugVar, ErrVar)
-    END IF
-    
-    ! Platform Proportional Resonant Control
+
+    ! Platform proportional resonant control is mutually exclusive with standard ROSCO pitch and torque control
     IF (CntrPar%PPPR_Mode > 0) THEN
-        CALL PlatformProportionalResControl(avrSWAP, CntrPar, LocalVar, DebugVar, objInst)
+        CALL PlatformProportionalResControl(avrSWAP, CntrPar, LocalVar, DebugVar, objInst, ErrVar)
+    ELSE
+        CALL VariableSpeedControl(avrSWAP, CntrPar, LocalVar, objInst, ErrVar)
+        IF (CntrPar%PC_ControlMode > 0) THEN
+            CALL PitchControl(avrSWAP, CntrPar, LocalVar, objInst, DebugVar, ErrVar)
+        END IF
     END IF
     
     IF (CntrPar%Y_ControlMode > 0) THEN

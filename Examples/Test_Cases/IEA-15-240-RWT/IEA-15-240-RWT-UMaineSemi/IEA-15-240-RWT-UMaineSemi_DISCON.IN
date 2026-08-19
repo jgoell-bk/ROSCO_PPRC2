@@ -2,7 +2,7 @@
 !    - File written using ROSCO version 2.10.1 controller tuning logic on 11/26/25
 
 !------- SIMULATION CONTROL ------------------------------------------------------------
-2                   ! LoggingLevel		- 0: write no debug files, 1: write standard output .dbg-file, 2: LoggingLevel 1 + ROSCO LocalVars (.dbg2) 3: LoggingLevel 2 + complete avrSWAP-array (.dbg3)
+1                   ! LoggingLevel		- 0: write no debug files, 1: write standard output .dbg-file, 2: LoggingLevel 1 + ROSCO LocalVars (.dbg2) 3: LoggingLevel 2 + complete avrSWAP-array (.dbg3)
 0                   ! DT_Out    		  - Time step to output .dbg* files, or 0 to match sampling period of OpenFAST
 1                   ! Ext_Interface		- (0 - use standard bladed interface, 1 - Use the extened DLL interface introduced in OpenFAST 3.5.0.)
 0                   ! Echo		        - (0 - no Echo, 1 - Echo input data to <RootName>.echo)
@@ -15,7 +15,7 @@
 0                   ! VS_FBP          - Fixed blade pitch configuration mode (0- variable pitch (disabled), 1- constant power overspeed, 2- WSE-lookup reference tracking, 3- torque-lookup reference tracking)
 0                   ! PC_ControlMode  - Blade pitch control mode (0: No pitch, fix to fine pitch, 1: active PI blade pitch control)
 0                   ! Y_ControlMode   - Yaw control mode (0: no yaw control, 1: yaw rate control, 2: yaw-by-IPC)
-0                   ! SS_Mode         - Setpoint Smoother mode (0: no setpoint smoothing, 1: introduce setpoint smoothing)
+1                   ! SS_Mode         - Setpoint Smoother mode (0: no setpoint smoothing, 1: introduce setpoint smoothing)
 0                   ! PRC_Mode        - Power reference tracking mode (0: power control disabled, 1: lookup table from wind speed to generator speed setpoints, 2: change speed, torque, pitch to control power)
 2                   ! WE_Mode         - Wind speed estimator mode (0: One-second low pass filtered hub height wind speed, 1: Immersion and Invariance Estimator, 2: Extended Kalman Filter)
 0                   ! PS_Mode         - Pitch saturation mode (0: no pitch saturation, 1: implement pitch saturation)
@@ -61,11 +61,11 @@
 0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00                  ! PC_GS_KD			- Gain-schedule table: pitch controller kd gains
 0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00    0.000e+00                  ! PC_GS_TF			- Gain-schedule table: pitch controller tf gains (derivative filter)
 1.570000000000      ! PC_MaxPit			- Maximum physical pitch limit, [rad].
-0.000000000000      ! PC_MinPit			- Minimum physical pitch limit, [rad].
+-1.57000000000      ! PC_MinPit			- Minimum physical pitch limit, [rad].
 0.034900000000      ! PC_MaxRat			- Maximum pitch rate (in absolute value) in pitch controller, [rad/s].
 -0.03490000000      ! PC_MinRat			- Minimum pitch rate (in absolute value) in pitch controller, [rad/s].
 0.791680000000      ! PC_RefSpd			- Desired (reference) HSS speed for pitch controller, [rad/s].
-0.000000000000      ! PC_FinePit		- Record 5: Below-rated pitch angle set-point, [rad]
+-0.35000000000      ! PC_FinePit		- Record 5: Below-rated pitch angle set-point, [rad]
 0.017450000000      ! PC_Switch			- Angle above lowest minimum pitch angle for switch, [rad]
 
 !------- INDIVIDUAL PITCH CONTROL -----------------------------------------
@@ -247,16 +247,14 @@
 0                   ! StC_GroupIndex    - First index for structural control group, options specified in ServoDyn summary output
 
 !------- PLATFORM PROPORTIONAL RESONANT CONTROL ---------------------------------------------------------
-2                   ! PPPR_Mode         - Platform proportional resonant control mode {0 - off, 1 - PR (additive), 2 - PIR (absolute, baselines off)}
-0.0174533           ! PPPR_amp_phi      - Amplitude for platform pitch sinusoidal reference [rad]  (= 1 deg)
-0.0318310           ! PPPR_freq_phi     - Frequency for platform pitch resonant controller [Hz]  (= 0.2 rad/s; deliberately off UMaineSemi's 0.213 rad/s platform mode)
-0.01                ! PPPR_amp_omega    - Amplitude for generator speed sinusoidal reference [rad/s]
-0.0318310           ! PPPR_freq_omega   - Frequency for generator torque resonant controller [Hz]  (= 0.2 rad/s)
-0.0                 ! Phi_phaseoffset   - Phase offset for platform pitch reference [deg]
--90.0               ! Omega_phaseoffset - Phase offset for generator torque reference [deg]  (reference waveform is sin(wt - 90 deg); ROSCO adds the offset, so enter -90)
-0.00318310          ! PPPR_fz_phi       - PI zero frequency for phi PIR controller [Hz]  (= freq/10 = 0.02 rad/s)
-0.00318310          ! PPPR_fz_omega     - PI zero frequency for omega PIR controller [Hz]  (= freq/10 = 0.02 rad/s)
-0.0575959           ! PPPR_offset_phi   - Mean (DC) offset of platform pitch reference [rad]  (3.3 deg = 5.3 deg equilibrium tilt at 10 m/s minus a 2 deg deviation. The reference frame is a deviation from equilibrium; ROSCO PtfmRDY is absolute, so the equilibrium tilt must be added.)
-0.708333            ! PPPR_offset_omega - Mean (DC) offset of generator speed reference [rad/s]  (= TSR0*Uinf/R = 8.5*10/120)
-1.33086  0.133086   ! PPPR_CntrGains_phi    - [Kp, Kr] gains for phi PIR controller [rad pitch / rad error]  (gain formula at U=10, freq=0.2, zeta=0.7: kp = 76.252 deg/rad x pi/180; kr = kp/10)
-7.5714e+07  7.5714e+06  ! PPPR_CntrGains_omega  - [Kp, Kr] gains for omega PIR controller [Nm / (rad/s)]  (gain formula: kp_Tg = 7.5714e7; kr_Tg = kp_Tg/10)
+1                   ! PPPR_Mode         - Platform proportional resonant control mode {0 - off, 1 - on}
+2.0                 ! PPPR_amp_phi      - Amplitude for platform pitch sinusoidal reference [deg]
+0.1    ! PPPR_freq_phi     - Frequency for platform pitch resonant controller (platform pitch natural freq = 0.213 rad/s) [rad/s]
+5.0                 ! PPPR_offset_phi   - Mean offset for platform pitch resonant controller [deg]
+0.01                ! PPPR_amp_omega    - Amplitude for rotation rate sinusoidal reference [rad/s]
+0.1    ! PPPR_freq_omega   - Frequency for rotation rate resonant controller [rad/s]
+0.708333    ! PPPR_offset_omega - Mean offset for rotation rate resonant controller [rad/s] -- set this manually from U_inf and TSR_0 (TSR0=8.5, Uinf=10 m/s: 8.5*10/120)
+90                   ! Phi_phaseoffset   - Phase offset for platform pitch reference [deg]
+0.0                 ! Omega_phaseoffset - Phase offset for rotation rate reference [deg]
+0.463407   0.0463407  0.01    ! PPPR_CntrGains_phi    - [Kp, Kr, omega_z] gains for phi resonant controller (undamped resonant term) [-, -, rad/s]. Kp/Kr radian-consistent (fixed deg/rad units bug in gain derivation) for freq=PPPR_freq_phi=0.1 rad/s.
+2.63639e+07  2.63639e+06  0.01    ! PPPR_CntrGains_omega  - [Kp, Kr, omega_z] gains for omega resonant controller (undamped resonant term) [-, -, rad/s]

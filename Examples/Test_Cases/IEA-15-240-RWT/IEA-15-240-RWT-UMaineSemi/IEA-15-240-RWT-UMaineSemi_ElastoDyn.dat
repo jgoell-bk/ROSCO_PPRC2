@@ -1,7 +1,7 @@
 ------- ELASTODYN v1.03.* INPUT FILE -------------------------------------------
 IEA 15 MW offshore reference model on UMaine VolturnUS-S semi-submersible floating platform
 ---------------------- SIMULATION CONTROL --------------------------------------
-False         Echo        - Echo input data to "<RootName>.ech" (flag)
+True          Echo        - Echo input data to "<RootName>.ech" (flag)
           3   Method      - Integration method: {1: RK4, 2: AB4, or 3: ABM4} (-)
 "default"     DT          - Integration time step (s)
 ---------------------- DEGREES OF FREEDOM --------------------------------------
@@ -30,7 +30,7 @@ True          PtfmYDOF    - Platform yaw rotation DOF (flag)
          1.   BlPitch(3)  - Blade 3 initial pitch (degrees) [unused for 2 blades]
           0   TeetDefl    - Initial or fixed teeter angle (degrees) [unused for 3 blades]
           0   Azimuth     - Initial azimuth angle for blade 1 (degrees)
-      6.765   RotSpeed    - Initial or fixed rotor speed (rpm)
+       7.55   RotSpeed    - Initial or fixed rotor speed (rpm)
           0   NacYaw      - Initial or fixed nacelle-yaw angle (degrees)
           0   TTDspFA     - Initial fore-aft tower-top displacement (meters)
           0   TTDspSS     - Initial side-to-side tower-top displacement (meters)
@@ -38,7 +38,7 @@ True          PtfmYDOF    - Platform yaw rotation DOF (flag)
           0   PtfmSway    - Initial or fixed horizontal sway translational displacement of platform (meters)
           0   PtfmHeave   - Initial or fixed vertical heave translational displacement of platform (meters)
           0   PtfmRoll    - Initial or fixed roll tilt rotational displacement of platform (degrees)
-        5.3   PtfmPitch   - Initial or fixed pitch tilt rotational displacement of platform (degrees)
+          0   PtfmPitch   - Initial or fixed pitch tilt rotational displacement of platform (degrees)
           0   PtfmYaw     - Initial or fixed yaw rotational displacement of platform (degrees)
 ---------------------- TURBINE CONFIGURATION -----------------------------------
           3   NumBl       - Number of blades (-)
@@ -73,6 +73,7 @@ True          PtfmYDOF    - Platform yaw rotation DOF (flag)
           0   TipMass(3)  - Tip-brake mass, blade 3 (kg) [unused for 2 blades]
       69131   HubMass     - Hub mass (kg)
      969952   HubIner     - Hub inertia about rotor axis [3 blades] or teeter axis [2 blades] (kg m^2)
+          0   HubIner_Teeter - Hub inertia about teeter axis [2-blader] (kg m^2)
     1836784   GenIner     - Generator inertia about HSS (kg m^2)
      644857   NacMass     - Nacelle mass (kg)
    32929058   NacYIner    - Nacelle inertia about yaw axis (kg m^2)

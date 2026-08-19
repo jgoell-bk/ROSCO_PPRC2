@@ -134,6 +134,16 @@ DEFAULTS = dict(
     dt=0.025,
     dt_out=0.05,
     pppr=True,
+    # Blade-pitch floor. This is the single most consequential setting in the file:
+    # the reference tree shipped PC_MinPit = -1.57 rad / PC_FinePit = -0.35 rad,
+    # which lets the controller command NEGATIVE pitch, while this tree shipped 0/0.
+    # PC_FinePit is the operative floor (PS_Mode = 0 sets LocalVar%PC_MinPit from
+    # it); PC_MinPit is only the hardware backstop applied to PitComAct. Holding
+    # the platform near equilibrium tilt needs ~0 deg of steady pitch, so with a
+    # 0 floor the command clips and the controller diverges -- which is why this
+    # tree needed offset_dev_deg < 0 and the reference tree did not.
+    pc_minpit_rad=0.0,
+    pc_finepit_rad=0.0,
 )
 
 
@@ -191,6 +201,18 @@ def build_cases():
     for w in (0.213, 0.24):
         add(f"C2_w{w:g}_fixedgain_d{DEV:+g}", "C2_frequency_fixedgain", omega=w,
             gains=g20, offset_dev_deg=DEV)
+
+    # --- Sweep D: the pitch floor. This is the direct test of why the reference
+    #     tree works near equilibrium tilt and this one does not. Each row pairs a
+    #     floor with dev = 0, the operating point that diverged at t=123 s under a
+    #     0 floor. If the -0.35 rad rows survive, the floor is the whole story.
+    for name, mn, fn in (("0", 0.0, 0.0),            # this tree's shipped floor
+                         ("fine-0.35", -1.57, -0.35),  # reference tree's shipped pair
+                         ("fine-0.09", -1.57, -0.0873)):  # -5 deg, a defensible limit
+        add(f"D_floor{name}_dev0", "D_pitch_floor", offset_dev_deg=0.0,
+            amp_phi_deg=1.0, omega=0.20, pc_minpit_rad=mn, pc_finepit_rad=fn)
+        add(f"D_floor{name}_dev-2", "D_pitch_floor", offset_dev_deg=-2.0,
+            amp_phi_deg=1.0, omega=0.20, pc_minpit_rad=mn, pc_finepit_rad=fn)
 
     # de-duplicate ids (sweeps overlap at the nominal point)
     seen, out = set(), []
@@ -296,7 +318,7 @@ def setup_case(c):
     freq_hz = c["omega"] / (2 * math.pi)
     g = c["gains"] or pir_gains(c["U"], c["omega"], c["zeta"], c["ratio"])
     tilt = c["tilt_deg"]
-    offset_phi_rad = math.radians(tilt + c["offset_dev_deg"])
+    # (offset is written in degrees now -- see the DISCON block below)
     omega_ref = TSR0 * c["U"] / RROT
 
     # ---- .fst
@@ -353,24 +375,35 @@ def setup_case(c):
     p = os.path.join(d, DISCON)
     L = read(p)
     if c["pppr"]:
-        set_discon(L, "PPPR_Mode", 2)
+        # Unit conventions below follow the merged (reference-tree) controller:
+        #   PPPR_Mode        1, not 2 -- the additive/delayed mode no longer exists
+        #   PPPR_amp_phi     DEGREES  (was radians)
+        #   PPPR_offset_phi  DEGREES  (was radians)
+        #   PPPR_freq_*      rad/s    (was Hz)
+        #   PPPR_CntrGains_* 3 values [Kp, Kr, omega_z]; PPPR_fz_* no longer exist
+        #   phase enters as sin(wt - phase*D2R), so the sign is negated here to
+        #   keep a case's phi_phase_deg/omega_phase_deg meaning what it did before.
+        omega_z = c["omega"] / 10.0                     # PI zero, 0.1x forcing freq
+        set_discon(L, "PPPR_Mode", 1)
         set_discon(L, "PC_ControlMode", 0)
         set_discon(L, "VS_ControlMode", 0)
         set_discon(L, "SS_Mode", 0)
         set_discon(L, "PS_Mode", 0)
         set_discon(L, "Fl_Mode", 0)
-        set_discon(L, "PPPR_amp_phi", "{:.7f}".format(math.radians(c["amp_phi_deg"])))
-        set_discon(L, "PPPR_freq_phi", "{:.7f}".format(freq_hz))
+        set_discon(L, "PC_MinPit", "{:.6f}".format(c["pc_minpit_rad"]))
+        set_discon(L, "PC_FinePit", "{:.6f}".format(c["pc_finepit_rad"]))
+        set_discon(L, "PPPR_amp_phi", "{:.6f}".format(c["amp_phi_deg"]))
+        set_discon(L, "PPPR_freq_phi", "{:.6f}".format(c["omega"]))
         set_discon(L, "PPPR_amp_omega", "{:.6f}".format(c["amp_omega"]))
-        set_discon(L, "PPPR_freq_omega", "{:.7f}".format(freq_hz))
-        set_discon(L, "Phi_phaseoffset", "{:.2f}".format(c["phi_phase_deg"]))
-        set_discon(L, "Omega_phaseoffset", "{:.2f}".format(c["omega_phase_deg"]))
-        set_discon(L, "PPPR_fz_phi", "{:.8f}".format(freq_hz / 10.0))
-        set_discon(L, "PPPR_fz_omega", "{:.8f}".format(freq_hz / 10.0))
-        set_discon(L, "PPPR_offset_phi", "{:.7f}".format(offset_phi_rad))
+        set_discon(L, "PPPR_freq_omega", "{:.6f}".format(c["omega"]))
+        set_discon(L, "Phi_phaseoffset", "{:.2f}".format(-c["phi_phase_deg"]))
+        set_discon(L, "Omega_phaseoffset", "{:.2f}".format(-c["omega_phase_deg"]))
+        set_discon(L, "PPPR_offset_phi", "{:.6f}".format(tilt + c["offset_dev_deg"]))
         set_discon(L, "PPPR_offset_omega", "{:.6f}".format(omega_ref))
-        set_discon(L, "PPPR_CntrGains_phi", "{:.6f}  {:.6f}".format(g["kp"], g["kr"]))
-        set_discon(L, "PPPR_CntrGains_omega", "{:.5e}  {:.5e}".format(g["kp_tg"], g["kr_tg"]))
+        set_discon(L, "PPPR_CntrGains_phi",
+                   "{:.6f}  {:.6f}  {:.6f}".format(g["kp"], g["kr"], omega_z))
+        set_discon(L, "PPPR_CntrGains_omega",
+                   "{:.5e}  {:.5e}  {:.6f}".format(g["kp_tg"], g["kr_tg"], omega_z))
     else:
         set_discon(L, "PPPR_Mode", 0)
         set_discon(L, "PC_ControlMode", 1)
@@ -378,6 +411,11 @@ def setup_case(c):
         set_discon(L, "SS_Mode", 1)
         set_discon(L, "PS_Mode", 1)
         set_discon(L, "Fl_Mode", 0)
+        # Pin the baseline to the stock physical floor regardless of what the
+        # merged DISCON.IN ships, or the power reference moves with the PPPR
+        # cases and every pwr_vs_base_pct becomes meaningless.
+        set_discon(L, "PC_MinPit", "{:.6f}".format(0.0))
+        set_discon(L, "PC_FinePit", "{:.6f}".format(0.0))
     write(p, L)
 
     c["_dir"] = d
@@ -599,6 +637,7 @@ def main():
                    freq_hz=round(c["_freq_hz"], 6), amp_phi_deg=c["amp_phi_deg"],
                    amp_omega=c["amp_omega"], offset_dev_deg=c["offset_dev_deg"],
                    tilt_deg=round(c["tilt_deg"], 3), waves=int(c["waves"]),
+                   pc_finepit=c["pc_finepit_rad"],
                    kp=round(c["_gains"]["kp"], 6), kr=round(c["_gains"]["kr"], 6),
                    kp_tg="{:.4e}".format(c["_gains"]["kp_tg"]),
                    kr_tg="{:.4e}".format(c["_gains"]["kr_tg"]),

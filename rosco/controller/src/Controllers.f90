@@ -64,8 +64,10 @@ CONTAINS
         LocalVar%PC_KD = interp1d(CntrPar%PC_GS_angles, CntrPar%PC_GS_KD, LocalVar%BlPitchCMeasF, ErrVar) ! Derivative gain
         LocalVar%PC_TF = interp1d(CntrPar%PC_GS_angles, CntrPar%PC_GS_TF, LocalVar%BlPitchCMeasF, ErrVar) ! TF gains (derivative filter) !NJA - need to clarify
         
-        ! Compute the collective pitch command associated with the proportional and integral gains:
-        LocalVar%PC_PitComT = PIController(LocalVar%PC_SpdErr, LocalVar%PC_KP, LocalVar%PC_KI, LocalVar%PC_MinPit, LocalVar%PC_MaxPit, LocalVar%DT, LocalVar%BlPitch(1), LocalVar%piP, LocalVar%restart, objInst%instPI)
+        ! Compute the collective pitch command associated with the proportional and integral gains.
+        LocalVar%PC_PitComT = PIController(LocalVar%PC_SpdErr, LocalVar%PC_KP, LocalVar%PC_KI, &
+            LocalVar%PC_MinPit, LocalVar%PC_MaxPit, &
+            LocalVar%DT, LocalVar%BlPitch(1), LocalVar%piP, LocalVar%restart, objInst%instPI)
         DebugVar%PC_PICommand = LocalVar%PC_PitComT
 
         ! Find individual pitch control contribution
@@ -1223,209 +1225,302 @@ SUBROUTINE StructuralControl(avrSWAP, CntrPar, LocalVar, objInst, ErrVar)
         inst = inst + 1
         
     END FUNCTION ResController
-!-------------------------------------------------------------------------------------------------------------------------------
-    REAL(DbKi) FUNCTION PIResController(error, kp, kr, fz, freq, minValue, maxValue, DT, resP, reset, inst)
-        USE ROSCO_Types, ONLY : resParams
 
-    ! Proportional-Integral-Resonant (PIR) controller, with output saturation.
+   !-------------------------------------------------------------------------------------------------------------------------------
+    REAL(DbKi) FUNCTION PIRController(error, kp, kr, freq, freqz, minValue, maxValue, DT, pirP, reset, inst)
+        USE ROSCO_Types, ONLY : pirParams
+
+    ! PIR controller, with output saturation
     !
     !   C(s) = kp*(1 + wz/s) + kr*s/(s^2 + wr^2)
     !
-    ! The integrator term gives infinite DC gain, so unlike the pure PR
-    ! controller in ResController this can track a reference with a nonzero
-    ! mean. Both platform tilt and rotor speed have nonzero equilibrium
-    ! states, which is why the PR form could not track them.
-    !
-    ! wz = 2*PI*fz is the zero that tames the integrator pole at s = 0, and
-    ! must sit well below the resonant frequency wr = 2*PI*freq (fz = freq/10
-    ! is the usual choice).
-    !
-    ! Discretized with the bilinear (Tustin) transform over the common
-    ! denominator s*(s^2 + wr^2), giving a third-order difference equation.
-    ! Coefficients follow the MATLAB reference implementation
-    ! (MatlabSimulations/PR_control_nonlinear_sim.m) exactly.
+    ! Ideal (undamped) resonant term: its poles sit exactly on the unit
+    ! circle after discretization, giving very high (in principle infinite)
+    ! gain at the resonant frequency wr, but only marginal closed-loop
+    ! stability -- prone to diverging once it sits in a real feedback loop
+    ! with broadband disturbances (e.g. wave-driven platform motion) rather
+    ! than a pure single-frequency input.
 
         IMPLICIT NONE
         ! Allocate Inputs
         REAL(DbKi),    INTENT(IN)         :: error
-        REAL(DbKi),    INTENT(IN)         :: kp                                           ! Proportional gain
-        REAL(DbKi),    INTENT(IN)         :: kr                                           ! Resonant gain
-        REAL(DbKi),    INTENT(IN)         :: fz                                           ! PI zero frequency [Hz]
-        REAL(DbKi),    INTENT(IN)         :: freq                                         ! Resonant frequency [Hz]
+        REAL(DbKi),    INTENT(IN)         :: kp
+        REAL(DbKi),    INTENT(IN)         :: kr
+        REAL(DbKi),    INTENT(IN)         :: freq
+        REAL(DbKi),    INTENT(IN)         :: freqz
         REAL(DbKi),    INTENT(IN)         :: minValue
         REAL(DbKi),    INTENT(IN)         :: maxValue
         REAL(DbKi),    INTENT(IN)         :: DT
         INTEGER(IntKi), INTENT(INOUT)     :: inst
-        TYPE(resParams), INTENT(INOUT)    :: resP
+        TYPE(PIRParams), INTENT(INOUT)    :: pirP
         LOGICAL,    INTENT(IN)            :: reset
         ! Allocate local variables
         REAL(DbKi)                        :: omega                                        ! Resonant frequency [rad/s]
-        REAL(DbKi)                        :: omega_z                                      ! PI zero frequency [rad/s]
-        REAL(DbKi)                        :: b0, b1, b2
-        REAL(DbKi)                        :: n0, n1, n2, n3
+        REAL(DbKi)                        :: omegaz                                       ! PI zero frequency [rad/s]
+        REAL(DbKi)                        :: K, K2, K3                                    ! Bilinear-transform substitution powers
+        REAL(DbKi)                        :: n3, n2, n1, n0                               ! Continuous-time numerator coefficients
+        REAL(DbKi)                        :: d1                                           ! Continuous-time denominator coefficient (D(s) = s^3 + d1*s)
+        REAL(DbKi)                        :: a0, a1, a2, a3                               ! Discrete-time numerator coefficients
+        REAL(DbKi)                        :: b0, b1, b2, b3                               ! Discrete-time denominator coefficients
 
-        omega   = 2*PI*freq
-        omega_z = 2*PI*fz
+        omega  = 2*PI*freq    ! Hz to rad/s
+        omegaz = 2*PI*freqz   ! Hz to rad/s, consistent with freq convention
 
-        ! Denominator coefficients of the resonant term, as in ResController
-        b0 = 4+omega**2*DT**2
-        b1 = -8+2*omega**2*DT**2
-        b2 = 4+omega**2*DT**2
+        !! Continuous-time coefficients: N(s) = kp*(s+wz)*(s^2+wr^2) + kr*s^2, D(s) = s*(s^2+wr^2) = s^3 + wr^2*s
+        n3 = kp
+        n2 = kp*omegaz + kr
+        n1 = kp*omega**2
+        n0 = kp*omegaz*omega**2
+        d1 = omega**2
 
-        ! Numerator coefficients of the full PIR controller
-        n0 = kp*(1 + omega_z*DT/2)*b0 + 2*kr*DT
-        n1 = kp*(b1-b0) + kp*omega_z*DT/2*(b0+b1) - 2*kr*DT
-        n2 = kp*(b0-b1) + kp*omega_z*DT/2*(b0+b1) - 2*kr*DT
-        n3 = kp*(omega_z*DT/2 - 1)*b0 + 2*kr*DT
+        !! Bilinear (Tustin) transform, K = 2/DT (D(s) has no s^2 or constant term):
+        K  = 2/DT
+        K2 = K*K
+        K3 = K2*K
 
-        ! Initialize persistent variables/arrays
+        a0 = n3*K3 + n2*K2 + n1*K + n0
+        a1 = -3*n3*K3 - n2*K2 + n1*K + 3*n0
+        a2 = 3*n3*K3 - n2*K2 - n1*K + 3*n0
+        a3 = -n3*K3 + n2*K2 - n1*K + n0
+
+        b0 = K3 + d1*K
+        b1 = -3*K3 + d1*K
+        b2 = -b1
+        b3 = -b0
+
+        ! Initialize persistent variables/arrays, and set initial condition for integrator term
         IF (reset) THEN
-            resP%res_OutputSignalLast1(inst)  = 0
-            resP%res_OutputSignalLast2(inst)  = 0
-            resP%res_OutputSignalLast3(inst)  = 0
-            resP%res_InputSignalLast1(inst)   = 0
-            resP%res_InputSignalLast2(inst)   = 0
-            resP%res_InputSignalLast3(inst)   = 0
+            pirP%pir_OutputSignalLast1(inst)  = 0
+            pirP%pir_OutputSignalLast2(inst)  = 0
+            pirP%pir_OutputSignalLast3(inst)  = 0
+            pirP%pir_InputSignalLast1(inst)   = 0
+            pirP%pir_InputSignalLast2(inst)   = 0
+            pirP%pir_InputSignalLast3(inst)   = 0
         ELSE
-            PIResController = 1/b0*( n0*error + n1*resP%res_InputSignalLast1(inst) &
-                                              + n2*resP%res_InputSignalLast2(inst) &
-                                              + n3*resP%res_InputSignalLast3(inst) &
-                                     - (b1-b0)*resP%res_OutputSignalLast1(inst) &
-                                     + (b1-b0)*resP%res_OutputSignalLast2(inst) &
-                                     +      b0*resP%res_OutputSignalLast3(inst))
-            PIResController = saturate(PIResController, minValue, maxValue)
+            PIRController = 1/b0*( -b1*pirP%pir_OutputSignalLast1(inst) - b2*pirP%pir_OutputSignalLast2(inst) - b3*pirP%pir_OutputSignalLast3(inst) &
+                                    + a0*error + a1*pirP%pir_InputSignalLast1(inst) + a2*pirP%pir_InputSignalLast2(inst) + a3*pirP%pir_InputSignalLast3(inst))
+            PIRController = saturate(PIRController, minValue, maxValue)
 
             ! Save signals for next time step
-            resP%res_InputSignalLast3(inst)   = resP%res_InputSignalLast2(inst)
-            resP%res_InputSignalLast2(inst)   = resP%res_InputSignalLast1(inst)
-            resP%res_InputSignalLast1(inst)   = error
-            resP%res_OutputSignalLast3(inst)  = resP%res_OutputSignalLast2(inst)
-            resP%res_OutputSignalLast2(inst)  = resP%res_OutputSignalLast1(inst)
-            resP%res_OutputSignalLast1(inst)  = PIResController
+            pirP%pir_InputSignalLast3(inst)   = pirP%pir_InputSignalLast2(inst)
+            pirP%pir_InputSignalLast2(inst)   = pirP%pir_InputSignalLast1(inst)
+            pirP%pir_InputSignalLast1(inst)   = error
+            pirP%pir_OutputSignalLast3(inst)  = pirP%pir_OutputSignalLast2(inst)
+            pirP%pir_OutputSignalLast2(inst)  = pirP%pir_OutputSignalLast1(inst)
+            pirP%pir_OutputSignalLast1(inst)  = PIRController
         END IF
         inst = inst + 1
 
-    END FUNCTION PIResController
+    END FUNCTION PIRController
+
 !-------------------------------------------------------------------------------------------------------------------------------
-SUBROUTINE PlatformProportionalResControl(avrSWAP, CntrPar, LocalVar, DebugVar, objInst)
+SUBROUTINE PlatformProportionalResControl(avrSWAP, CntrPar, LocalVar, DebugVar, objInst, ErrVar)
     ! Platform Pitch Proportional Resonant Control
     !       PPPR_Mode = 0, Inactive
-    !       PPPR_Mode = 1, PR controller. Adds offsets on top of the baseline
-    !                      ROSCO pitch/torque commands. Activates at t = 30 s.
-    !       PPPR_Mode = 2, PIR controller. Issues absolute pitch/torque commands
-    !                      and is the sole controller, so the baseline controllers
-    !                      must be off (PC_ControlMode = 0, VS_ControlMode = 0,
-    !                      Fl_Mode = 0, SS_Mode = 0, PS_Mode = 0). Active from t = 0.
+    !       PPPR_Mode > 0, Active
 
-    USE ROSCO_Types,       ONLY : ControlParameters, LocalVariables, DebugVariables, ObjectInstances
-
-    REAL(ReKi),              INTENT(INOUT) :: avrSWAP(*)
+    USE ROSCO_Types,       ONLY : ControlParameters, LocalVariables, DebugVariables, ObjectInstances, ErrorVariables
+    REAL(ReKi),              INTENT(INOUT) :: avrSWAP(*)   ! The swap array, used to pass data to, and receive data from the DLL controller.
     TYPE(ControlParameters), INTENT(INOUT) :: CntrPar
     TYPE(DebugVariables),    INTENT(INOUT) :: DebugVar
     TYPE(LocalVariables),    INTENT(INOUT) :: LocalVar
     TYPE(ObjectInstances),   INTENT(INOUT) :: objInst
+    TYPE(ErrorVariables),    INTENT(INOUT) :: ErrVar
 
     ! Local variables
     REAL(DbKi)     :: phi_error              ! platform pitch error [rad]
     REAL(DbKi)     :: phi_control_out        ! controller output [deg]
-    REAL(DbKi)     :: omega_error            ! generator speed error [rad/s]
-    REAL(DbKi)     :: tau_control_out        ! controller output [?]
+    REAL(DbKi)     :: omega_error            ! rotation rate error [rad/s]
+    REAL(DbKi)     :: omega_control_out      ! controller output [rad/s]
     REAL(DbKi)     :: phi_ref                ! platform pitch reference [rad]    
-    REAL(DbKi)     :: omega_ref              ! generator speed reference [rad/s]
+    REAL(DbKi)     :: omega_ref              ! rotation rate reference [rad/s]
     INTEGER(IntKi) :: K                      ! Index used for looping through blades
     REAL(DbKi)     :: StartTime = 0.0        ! Start time of closed-loop PR Control
+    CHARACTER(*),               PARAMETER           :: RoutineName = 'PlatformProportionalResControl'
 
-    ! Initialize 
+    ! Initialize
 
     phi_ref =           0.0_DbKi
     omega_ref =         0.0_DbKi
     phi_control_out =   0.0_DbKi
-    tau_control_out =   0.0_DbKi
+    omega_control_out = 0.0_DbKi
 
+    ! ------- Blade Pitch Controller --------
 
-    ! If Controller Active
-    IF (CntrPar%PPPR_Mode == 1 .AND. LocalVar%Time .GT. 30.0_DbKi) THEN
+        ! Hold blade pitch at last value
+        ! If:
+        !   In pre-startup mode (before freewheeling)
+        IF ((CntrPar%SU_Mode > 0) .AND. (LocalVar%SU_Stage == -1)) THEN
+            LocalVar%PC_MaxPit = LocalVar%BlPitchCMeas
+            LocalVar%PC_MinPit = LocalVar%BlPitchCMeas
+        END IF
 
-
-        ! Resonant controller (returns pitch offset)
-        IF (LocalVar%Time .GT. StartTime) THEN
-	    
-        ! Compute errors for phi and omega as actual vs sinusoidal reference
-
-            phi_ref = CntrPar%PPPR_amp_phi*sin(LocalVar%Time*2*PI*CntrPar%PPPR_freq_phi + CntrPar%Phi_phaseoffset*D2R)
-	    phi_error = LocalVar%PtfmRDY - phi_ref
-
-        omega_ref = CntrPar%VS_RefSpd + CntrPar%PPPR_amp_omega*sin(LocalVar%Time*2*PI*CntrPar%PPPR_freq_omega + CntrPar%Omega_phaseoffset*D2R)
-            omega_error = LocalVar%GenSpeedF - omega_ref
-
-            phi_control_out = ResController(phi_error, CntrPar%PPPR_CntrGains_phi(1), CntrPar%PPPR_CntrGains_phi(2), CntrPar%PPPR_freq_phi, &
-                                                      CntrPar%PC_MinPit, CntrPar%PC_MaxPit, LocalVar%DT, LocalVar%resP, LocalVar%restart, objInst%instRes_phi)
-            tau_control_out = ResController(omega_error, CntrPar%PPPR_CntrGains_omega(1), CntrPar%PPPR_CntrGains_omega(2), CntrPar%PPPR_freq_omega, &
-                                                      CntrPar%VS_MinTq, CntrPar%VS_MaxTq, LocalVar%DT, LocalVar%resP, LocalVar%restart, objInst%instRes_tau)
-
-        ENDIF
-
-
-        ! Apply pitch offset equally to all blades, re-apply hardware saturation,
-        ! and overwrite the avrSWAP entries that PitchControl already wrote.
-        DO K = 1, LocalVar%NumBl
-            LocalVar%PitCom(K)    = LocalVar%PitCom(K)    + phi_control_out
-            LocalVar%PitComAct(K) = LocalVar%PitComAct(K) + phi_control_out
-            LocalVar%PitComAct(K) = saturate(LocalVar%PitComAct(K), CntrPar%PC_MinPit, CntrPar%PC_MaxPit)
-        END DO
-        avrSWAP(42) = LocalVar%PitComAct(1)
-        avrSWAP(43) = LocalVar%PitComAct(2)
-        avrSWAP(44) = LocalVar%PitComAct(3)
-        avrSWAP(45) = LocalVar%PitComAct(1)
-
-        ! Apply generator-torque offset, re-apply hardware saturation, and overwrite
-        ! avrSWAP(47) and VS_LastGenTrq so the modification propagates downstream.
-        LocalVar%GenTq         = LocalVar%GenTq + tau_control_out
-        LocalVar%GenTq         = saturate(LocalVar%GenTq, CntrPar%VS_MinTq, CntrPar%VS_MaxTq)
-        LocalVar%VS_LastGenTrq = LocalVar%GenTq
-        avrSWAP(47)            = MAX(0.0_DbKi, LocalVar%VS_LastGenTrq)
-
-    END IF
-
-    ! PIR controller. Mirrors PR_control_nonlinear_sim.m: the controller output
-    ! IS the command, not an offset, so all baseline controllers must be off.
-    IF (CntrPar%PPPR_Mode == 2) THEN
-
-        ! Sinusoidal references about a nonzero mean. The PIR controller's
-        ! integrator is what lets it track the DC term.
-        phi_ref = CntrPar%PPPR_offset_phi &
-                  + CntrPar%PPPR_amp_phi*sin(LocalVar%Time*2*PI*CntrPar%PPPR_freq_phi + CntrPar%Phi_phaseoffset*D2R)
+        phi_ref = CntrPar%PPPR_offset_phi*D2R + CntrPar%PPPR_amp_phi*D2R*sin(LocalVar%Time*CntrPar%PPPR_freq_phi - CntrPar%Phi_phaseoffset*D2R)
         phi_error = LocalVar%PtfmRDY - phi_ref
 
-        omega_ref = CntrPar%PPPR_offset_omega &
-                    + CntrPar%PPPR_amp_omega*sin(LocalVar%Time*2*PI*CntrPar%PPPR_freq_omega + CntrPar%Omega_phaseoffset*D2R)
-        omega_error = LocalVar%GenSpeedF - omega_ref
+        omega_ref = CntrPar%PPPR_offset_omega + CntrPar%PPPR_amp_omega*sin(LocalVar%Time*CntrPar%PPPR_freq_omega - CntrPar%Omega_phaseoffset*D2R)
+        omega_error = LocalVar%RotSpeed - omega_ref
 
-        phi_control_out = PIResController(phi_error, CntrPar%PPPR_CntrGains_phi(1), CntrPar%PPPR_CntrGains_phi(2), &
-                                          CntrPar%PPPR_fz_phi, CntrPar%PPPR_freq_phi, &
-                                          CntrPar%PC_MinPit, CntrPar%PC_MaxPit, LocalVar%DT, LocalVar%resP, &
-                                          LocalVar%restart, objInst%instRes_phi)
-        tau_control_out = PIResController(omega_error, CntrPar%PPPR_CntrGains_omega(1), CntrPar%PPPR_CntrGains_omega(2), &
-                                          CntrPar%PPPR_fz_omega, CntrPar%PPPR_freq_omega, &
-                                          CntrPar%VS_MinTq, CntrPar%VS_MaxTq, LocalVar%DT, LocalVar%resP, &
-                                          LocalVar%restart, objInst%instRes_tau)
+        ! Compute the collective pitch command associated with the proportional and integral gains.
+        LocalVar%PC_PitComT = PIRController(phi_error, CntrPar%PPPR_CntrGains_phi(1), CntrPar%PPPR_CntrGains_phi(2), &
+            CntrPar%PPPR_freq_phi/(2*PI), CntrPar%PPPR_CntrGains_phi(3)/(2*PI), &
+            LocalVar%PC_MinPit, CntrPar%PC_MaxPit, LocalVar%DT, LocalVar%pirP, LocalVar%restart, objInst%instRes_phi)
 
-        ! Absolute collective pitch command
+        DebugVar%PC_PICommand = LocalVar%PC_PitComT
+        
+        ! Pitch Saturation
+        IF (CntrPar%PS_Mode > 0) THEN
+            LocalVar%PC_MinPit = PitchSaturation(LocalVar,CntrPar,objInst,DebugVar, ErrVar)
+            LocalVar%PC_MinPit = max(LocalVar%PC_MinPit, CntrPar%PC_FinePit)
+        ELSE
+            LocalVar%PC_MinPit = CntrPar%PC_FinePit
+        ENDIF
+        DebugVar%PC_MinPit = LocalVar%PC_MinPit
+        
+        ! Saturate collective pitch commands:
+        LocalVar%PC_PitComT = saturate(LocalVar%PC_PitComT, LocalVar%PC_MinPit, CntrPar%PC_MaxPit)                    ! Saturate the overall command using the pitch angle limits
+        LocalVar%PC_PitComT = ratelimit(LocalVar%PC_PitComT, CntrPar%PC_MinRat, CntrPar%PC_MaxRat, LocalVar%DT, LocalVar%restart, LocalVar%rlP,objInst%instRL,LocalVar%BlPitchCMeas) ! Saturate the overall command of blade K using the pitch rate limit
+        LocalVar%PC_PitComT_Last = LocalVar%PC_PitComT
+
+        ! Assign collective pitch command to each blade
         DO K = 1, LocalVar%NumBl
-            LocalVar%PitCom(K)    = phi_control_out
-            LocalVar%PitComAct(K) = saturate(phi_control_out, CntrPar%PC_MinPit, CntrPar%PC_MaxPit)
+            LocalVar%PitCom(K) = LocalVar%PC_PitComT
         END DO
-        avrSWAP(42) = LocalVar%PitComAct(1)
-        avrSWAP(43) = LocalVar%PitComAct(2)
-        avrSWAP(44) = LocalVar%PitComAct(3)
-        avrSWAP(45) = LocalVar%PitComAct(1)
 
-        ! Absolute generator torque command
-        LocalVar%GenTq         = saturate(tau_control_out, CntrPar%VS_MinTq, CntrPar%VS_MaxTq)
+        ! Combine and saturate all individual pitch commands in software
+        DO K = 1,LocalVar%NumBl ! Loop through all blades, add IPC contribution and limit pitch rate
+
+            ! Hard IPC saturation by peak shaving limit
+            IF (CntrPar%IPC_SatMode == 1) THEN
+                LocalVar%PitCom(K) = saturate(LocalVar%PitCom(K), LocalVar%PC_MinPit, CntrPar%PC_MaxPit)
+            END IF
+            
+            ! Add ZeroMQ pitch commands
+            LocalVar%PitCom(K) = LocalVar%PitCom(K) + LocalVar%ZMQ_PitOffset(K)
+
+            ! Rate limit                  
+            LocalVar%PitCom(K) = ratelimit(LocalVar%PitCom(K), CntrPar%PC_MinRat, CntrPar%PC_MaxRat, LocalVar%DT, LocalVar%restart, LocalVar%rlP,objInst%instRL,LocalVar%BlPitch(K)) ! Saturate the overall command of blade K using the pitch rate limit
+        END DO 
+
+        ! Shutdown
+        IF (LocalVar%SD_Trigger == 0) THEN
+            LocalVar%PitCom_SD = LocalVar%PitCom
+        ! If shutdown is not triggered, PitCom_SD tracks PitCom.
+        ELSE
+            IF (CntrPar%SD_Method == 1 .OR. CntrPar%SD_Method == 2) THEN
+                DO K = 1,LocalVar%NumBl
+                    LocalVar%PitCom_SD(K) = LocalVar%PitCom_SD(K) + LocalVar%SD_MaxPitchRate*LocalVar%DT
+                END DO
+            ENDIF
+            LocalVar%PitCom = LocalVar%PitCom_SD
+            ! When shutdown is triggered (SD_Trigger \=0), pitch to feather.
+            ! Note that in some instances (like a downwind rotor), we may want to pitch to a stall angle.
+        ENDIF
+       
+        ! Place pitch actuator here, so it can be used with or without open-loop
+        DO K = 1,LocalVar%NumBl ! Loop through all blades, add IPC contribution and limit pitch rate
+            IF (CntrPar%PA_Mode > 0) THEN
+                IF (CntrPar%PA_Mode == 1) THEN
+                    LocalVar%PitComAct(K) = LPFilter(LocalVar%PitCom(K), LocalVar%DT, CntrPar%PA_CornerFreq, LocalVar%FP, LocalVar%iStatus, LocalVar%restart, objInst%instLPF)
+                ELSE IF (CntrPar%PA_Mode == 2) THEN
+                    LocalVar%PitComAct(K) = SecLPFilter(LocalVar%PitCom(K),LocalVar%DT,CntrPar%PA_CornerFreq,CntrPar%PA_Damping,LocalVar%FP,LocalVar%iStatus,LocalVar%restart,objInst%instSecLPF)
+                END IF  
+            ELSE
+                LocalVar%PitComAct(K) = LocalVar%PitCom(K)
+            ENDIF
+        END DO
+
+        ! Hardware saturation: using CntrPar%PC_MinPit
+        DO K = 1,LocalVar%NumBl ! Loop through all blades, add IPC contribution and limit pitch rate
+            ! Saturate the pitch command using the overall (hardware) limit
+            LocalVar%PitComAct(K) = saturate(LocalVar%PitComAct(K), CntrPar%PC_MinPit, CntrPar%PC_MaxPit)
+            ! Saturate the overall command of blade K using the pitch rate limit
+            LocalVar%PitComAct(K) = ratelimit(LocalVar%PitComAct(K), CntrPar%PC_MinRat, CntrPar%PC_MaxRat, LocalVar%DT, LocalVar%restart, LocalVar%rlP,objInst%instRL,LocalVar%BlPitch(K)) ! Saturate the overall command of blade K using the pitch rate limit
+        END DO
+
+        ! Add pitch actuator fault for blade K
+        IF (CntrPar%PF_Mode == 1) THEN
+            DO K = 1, LocalVar%NumBl
+                ! This assumes that the pitch actuator fault overides the Hardware saturation
+                LocalVar%PitComAct(K) = LocalVar%PitComAct(K) + CntrPar%PF_Offsets(K)
+            END DO
+        ! Blade pitch stuck at last value
+        ELSEIF (CntrPar%PF_Mode == 2) THEN
+            DO K = 1, LocalVar%NumBl
+                IF (LocalVar%Time > CntrPar%PF_TimeStuck(K)) THEN
+                    LocalVar%PitComAct(K) = LocalVar%BlPitch(K)
+                END IF
+            END DO
+        END IF
+
+        ! Command the pitch demanded from the last
+        ! call to the controller (See Appendix A of Bladed User's Guide):
+        avrSWAP(42) = LocalVar%PitComAct(1)   ! Use the command angles of all blades if using individual pitch
+        avrSWAP(43) = LocalVar%PitComAct(2)   ! "
+        avrSWAP(44) = LocalVar%PitComAct(3)   ! "
+        avrSWAP(45) = LocalVar%PitComAct(1)   ! Use the command angle of blade 1 if using collective pitch
+
+        ! Add RoutineName to error message
+        IF (ErrVar%aviFAIL < 0) THEN
+            ErrVar%ErrMsg = RoutineName//':'//TRIM(ErrVar%ErrMsg)
+        ENDIF
+
+    ! -------- Generator Torque Controller ---------
+        ! Pre-compute generator torque values for K*Omega^2 and constant power
+        LocalVar%VS_KOmega2_GenTq = CntrPar%VS_Rgn2K*LocalVar%GenSpeedF*LocalVar%GenSpeedF
+        LocalVar%VS_ConstPwr_GenTq = (CntrPar%VS_RtPwr/(CntrPar%VS_GenEff/100.0))/LocalVar%GenSpeedF * LocalVar%PRC_R_Torque
+
+        ! Determine maximum torque saturation limit, VS_MaxTq
+        IF (CntrPar%VS_FBP == VS_FBP_Variable_Pitch) THEN 
+            ! Variable pitch mode        
+            IF (CntrPar%VS_ConstPower == VS_Mode_ConstPwr) THEN
+                LocalVar%VS_MaxTq = min(LocalVar%VS_ConstPwr_GenTq, CntrPar%VS_MaxTq)
+            ELSE
+                LocalVar%VS_MaxTq = CntrPar%VS_RtTq * LocalVar%PRC_R_Torque
+            END IF
+        ELSE   
+            ! Constant pitch, max torque is control parameter
+            LocalVar%VS_MaxTq = CntrPar%VS_MaxTq  
+        ENDIF 
+
+        ! PIR controller
+        LocalVar%GenTq = PIRController(omega_error, CntrPar%PPPR_CntrGains_omega(1), CntrPar%PPPR_CntrGains_omega(2), &
+            CntrPar%PPPR_freq_omega/(2*PI), CntrPar%PPPR_CntrGains_omega(3)/(2*PI), &
+            CntrPar%VS_MinTq, CntrPar%VS_MaxTq, LocalVar%DT, LocalVar%pirP, LocalVar%restart, objInst%instRes_omega)
+
+        ! Saturate control input to Region 3 constant-power value if FBP mode is set to constant-power overspeed (no need for explicit transition region)
+        IF (CntrPar%VS_FBP == VS_FBP_Power_Overspeed) THEN
+            LocalVar%GenTq = MIN(LocalVar%VS_ConstPwr_GenTq, LocalVar%GenTq)
+        ENDIF
+        
+        ! Shutdown
+        IF (LocalVar%SD_Trigger == 0) THEN
+            LocalVar%GenTq_SD = LocalVar%GenTq
+        ELSE 
+            IF (CntrPar%SD_Method == 1 .OR. CntrPar%SD_Method == 2) THEN
+                LocalVar%GenTq_SD = LocalVar%GenTq_SD - LocalVar%SD_MaxTorqueRate*LocalVar%DT
+                LocalVar%GenTq_SD = saturate(LocalVar%GenTq_SD, CntrPar%VS_MinTq, CntrPar%VS_MaxTq)
+            ENDIF
+            LocalVar%GenTq = LocalVar%GenTq_SD
+        ENDIF
+
+        ! Saturate based on most stringent defined maximum
+        LocalVar%GenTq = saturate(LocalVar%GenTq, CntrPar%VS_MinTq, MIN(CntrPar%VS_MaxTq, LocalVar%VS_MaxTq))
+
+        ! Saturate the commanded torque using the torque rate limit
+        LocalVar%GenTq = ratelimit(LocalVar%GenTq, -CntrPar%VS_MaxRat, CntrPar%VS_MaxRat, LocalVar%DT, LocalVar%restart, LocalVar%rlP,objInst%instRL)    ! Saturate the command using the torque rate limit
+
+        ! Reset the value of LocalVar%VS_LastGenTrq to the current values:
         LocalVar%VS_LastGenTrq = LocalVar%GenTq
-        avrSWAP(47)            = MAX(0.0_DbKi, LocalVar%VS_LastGenTrq)
+        LocalVar%VS_LastGenPwr = LocalVar%VS_GenPwr
+        
+        ! Set the command generator torque (See Appendix A of Bladed User's Guide):
+        avrSWAP(47) = MAX(0.0_DbKi, LocalVar%VS_LastGenTrq)  ! Demanded generator torque, prevent negatives.
 
-    END IF
+        ! Add RoutineName to error message
+        IF (ErrVar%aviFAIL < 0) THEN
+            ErrVar%ErrMsg = RoutineName//':'//TRIM(ErrVar%ErrMsg)
+        ENDIF
 
 END SUBROUTINE PlatformProportionalResControl
 !-------------------------------------------------------------------------------------------------------------------------------
