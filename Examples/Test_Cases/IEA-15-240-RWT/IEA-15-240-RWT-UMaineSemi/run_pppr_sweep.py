@@ -11,8 +11,14 @@ Usage
     conda activate openfast_env
     python run_pppr_sweep.py                 # run everything
     python run_pppr_sweep.py --list          # show the matrix, run nothing
-    python run_pppr_sweep.py --only A_       # run only cases whose id starts with A_
+    python run_pppr_sweep.py --only A_,C_    # run only ids containing A_ or C_
     python run_pppr_sweep.py --analyze-only  # recompute metrics from existing .out files
+    python run_pppr_sweep.py --results r.csv # write to SweepRuns/r.csv instead
+
+A partial run needs the baseline in the filter (--only BASE,A_), because the
+baseline is what measures the equilibrium tilt the PPPR cases offset from and
+what the delta-power column is referenced against. Without it the script falls
+back to --default-tilt and leaves pwr_vs_base_pct empty.
 
 Design notes
 ------------
@@ -131,6 +137,18 @@ DEFAULTS = dict(
 )
 
 
+# Operating-point deviation used by every sweep that is NOT deliberately varying
+# it. The first campaign ran A and C at dev = 0, which is unusable: holding the
+# platform at its *equilibrium* tilt needs ~0 deg of steady blade pitch, the
+# turbine already sits at 0.5-1.25 deg, so the command clips on the PC_MinPit = 0
+# floor, the clipped value is fed back into the controller's own stored state,
+# and it diverges. Every dev >= 0 case in results_dev0.csv failed and every
+# dev < 0 case survived, with nothing else in the matrix predicting the outcome.
+# -2 deg is the deepest deviation that still holds a workable amount of power
+# (-20.7% vs -59.1% at -4 deg), so it is the operating point to sweep around.
+DEV = -2.0
+
+
 def build_cases():
     cases = []
 
@@ -145,25 +163,34 @@ def build_cases():
     for U in (10.0,):
         add(f"BASE_U{U:g}", "baseline", U=U, pppr=False)
 
-    # --- Sweep A: amplitude (AC drive strength), centred on equilibrium.
+    # --- Sweep A: amplitude (AC drive strength) about the DEV operating point.
+    #     Expect a ceiling somewhere near 4 deg: at dev = -2 the baseline holds
+    #     ~5.5 deg of pitch, and the observed exchange rate is ~1.2 deg of pitch
+    #     swing per deg of platform amplitude, so amp ~4.5 puts the trough back
+    #     on the 0 deg floor. That ceiling is now a real amplitude limit rather
+    #     than the dev = 0 artefact.
     for a in (0.5, 1.0, 2.0, 3.0, 4.0, 5.0):
-        add(f"A_amp{a:g}", "A_amplitude", amp_phi_deg=a, offset_dev_deg=0.0, omega=0.20)
+        add(f"A_amp{a:g}_d{DEV:+g}", "A_amplitude", amp_phi_deg=a,
+            offset_dev_deg=DEV, omega=0.20)
 
     # --- Sweep B: DC offset. Directly tests the PIR integrator, which is the
     #     entire reason for the I term -- a pure PR cannot hold any of these.
+    #     This is the one sweep that varies dev, so it does not take DEV.
     for d in (0.0, -1.0, -2.0, -4.0, 2.0):
         add(f"B_dev{d:+g}", "B_dc_offset", offset_dev_deg=d, amp_phi_deg=1.0, omega=0.20)
 
     # --- Sweep C: frequency. 0.213 rad/s is the UMaineSemi platform mode and the
     #     abstract's actual target. Gains move with frequency (see pir_gains).
     for w in (0.15, 0.18, 0.20, 0.213, 0.24, 0.28):
-        add(f"C_w{w:g}", "C_frequency", omega=w, amp_phi_deg=1.0, offset_dev_deg=0.0)
+        add(f"C_w{w:g}_d{DEV:+g}", "C_frequency", omega=w, amp_phi_deg=1.0,
+            offset_dev_deg=DEV)
 
     # --- Sweep C2: frequency with gains PINNED at the 0.20 rad/s values, so that
     #     frequency is the only thing moving. Only meaningful if C shows a break.
     g20 = pir_gains(10.0, 0.20)
     for w in (0.213, 0.24):
-        add(f"C2_w{w:g}_fixedgain", "C2_frequency_fixedgain", omega=w, gains=g20)
+        add(f"C2_w{w:g}_fixedgain_d{DEV:+g}", "C2_frequency_fixedgain", omega=w,
+            gains=g20, offset_dev_deg=DEV)
 
     # de-duplicate ids (sweeps overlap at the nominal point)
     seen, out = set(), []
@@ -504,18 +531,26 @@ def measure_tilt(outpath):
 # ============================================================================
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", default=None, help="substring filter on case id")
+    ap.add_argument("--only", default=None,
+                    help="comma-separated substring filters on case id, e.g. 'A_,C_'")
     ap.add_argument("--list", action="store_true", help="print matrix and exit")
     ap.add_argument("--analyze-only", action="store_true",
                     help="recompute metrics from existing .out files")
     ap.add_argument("--default-tilt", type=float, default=5.3,
                     help="fallback equilibrium tilt [deg] if no baseline was run")
+    ap.add_argument("--results", default=RESULTS,
+                    help="output CSV (relative names land in SweepRuns/)")
     ap.add_argument("--timeout", type=int, default=7200)
     args = ap.parse_args()
 
+    results = args.results
+    if not os.path.isabs(results):
+        results = os.path.join(SWEEP, results)
+
     cases = build_cases()
     if args.only:
-        cases = [c for c in cases if args.only in c["id"]]
+        pats = [p.strip() for p in args.only.split(",") if p.strip()]
+        cases = [c for c in cases if any(p in c["id"] for p in pats)]
     # baselines first: they supply the tilt and the power reference
     cases.sort(key=lambda c: (c["pppr"], c["id"]))
 
@@ -588,12 +623,12 @@ def main():
             for k in r:
                 if k not in keys:
                     keys.append(k)
-        with open(RESULTS, "w", newline="") as f:
+        with open(results, "w", newline="") as f:
             w = csv.DictWriter(f, fieldnames=keys)
             w.writeheader()
             w.writerows(rows)
 
-    print("\nresults -> {}".format(RESULTS))
+    print("\nresults -> {}".format(results))
 
 
 if __name__ == "__main__":
