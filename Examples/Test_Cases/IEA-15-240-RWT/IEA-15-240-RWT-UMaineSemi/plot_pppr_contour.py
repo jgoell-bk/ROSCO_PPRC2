@@ -35,6 +35,26 @@ PANELS = [
     ("ptfm_phase_err", "Tilt phase error [deg]",        "RdBu_r",    0.0),
     ("pwr_vs_base_pct", "Power vs baseline [%]",        "RdBu_r",    0.0),
 ]
+# Panel 0 of the 2x2 is the regime map; PANELS fills the remaining three.
+PANELS = PANELS[:3]
+
+
+def is_valid(r):
+    """A run counts only if it finished AND is physically sensible.
+
+    completed == 1 means OpenFAST did not abort, which is far weaker than
+    "worked": a diverged PPPR case frequently runs the full duration with the
+    rotor spinning backwards. Negative mean power or negative mean rotor speed
+    is that failure, and interpolating a contour through it would paint a
+    smooth surface over nonsense.
+    """
+    if r.get("completed") != "1":
+        return False
+    for k in ("pwr_mean_kW", "gen_mean_rpm"):
+        v = fnum(r.get(k))
+        if v is not None and v <= 0:
+            return False
+    return True
 
 
 def fnum(v):
@@ -62,14 +82,46 @@ def main():
     if not rows:
         raise SystemExit("no rows with group == '{}' in {}".format(a.group, path))
 
-    ok = [r for r in rows if r.get("completed") == "1"]
-    bad = [r for r in rows if r.get("completed") != "1"]
-    print("{}: {} cases, {} completed, {} diverged".format(a.group, len(rows), len(ok), len(bad)))
-    if len(ok) < 3:
-        raise SystemExit("need at least 3 completed cases to contour; got {}".format(len(ok)))
+    ok = [r for r in rows if is_valid(r)]
+    bad = [r for r in rows if not is_valid(r)]
+    print("{}: {} cases, {} valid, {} failed".format(a.group, len(rows), len(ok), len(bad)))
+    for r in bad:
+        print("   failed: {:<22} P={:>10} kW  rpm={:>8}  t_end={}".format(
+            r.get("id", "?"), r.get("pwr_mean_kW", "-"), r.get("gen_mean_rpm", "-"),
+            r.get("t_end", "-")))
 
     fig, axes = plt.subplots(2, 2, figsize=(13, 9))
-    for ax, (col, title, cmap, sym) in zip(axes.ravel(), PANELS):
+
+    # Panel 0 is the regime map itself: which points work at all. With a hard
+    # failure boundary in the space this is the primary result, and the
+    # quantitative contours are only meaningful inside the working region.
+    ax0 = axes.ravel()[0]
+    for r, mk, col_, lbl in ((ok, "o", "tab:green", "worked"), (bad, "X", "tab:red", "failed")):
+        xs = [fnum(q[a.x]) for q in r]
+        ys = [fnum(q[a.y]) for q in r]
+        if xs:
+            ax0.scatter(xs, ys, marker=mk, c=col_, s=90, edgecolors="k",
+                        linewidths=0.6, label="{} ({})".format(lbl, len(r)), zorder=3)
+    ax0.set_title("Regime map: where the controller holds")
+    ax0.set_xlabel(a.x)
+    ax0.set_ylabel(a.y)
+    ax0.grid(alpha=0.3)
+    ax0.legend(loc="best", fontsize=9)
+
+    if len(ok) < 3:
+        for ax in axes.ravel()[1:]:
+            ax.set_axis_off()
+        ax0.set_title("Regime map (too few valid cases to contour)")
+        fig.suptitle("PPPR regime map -- {}".format(a.group))
+        fig.tight_layout()
+        if a.save:
+            fig.savefig(a.save, dpi=130)
+            print("wrote " + a.save)
+        if not a.no_show:
+            plt.show()
+        return
+
+    for ax, (col, title, cmap, sym) in zip(axes.ravel()[1:], PANELS):
         pts = [(fnum(r[a.x]), fnum(r[a.y]), fnum(r.get(col))) for r in ok]
         pts = [p for p in pts if None not in p]
         if len(pts) < 3:
@@ -90,7 +142,8 @@ def main():
         for r in bad:
             bx, by = fnum(r[a.x]), fnum(r[a.y])
             if bx is not None and by is not None:
-                ax.plot(bx, by, "x", color="k", ms=9, mew=2)
+                ax.plot(bx, by, "X", color="tab:red", ms=9, mew=1.2,
+                        markeredgecolor="k")
         ax.set_title(title)
         ax.set_xlabel(a.x)
         ax.set_ylabel(a.y)

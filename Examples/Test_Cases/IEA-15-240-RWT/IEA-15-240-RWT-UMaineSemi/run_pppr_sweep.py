@@ -229,7 +229,10 @@ def build_cases():
         cases.append(c)
 
     # --- Baselines: PPPR off, stock ROSCO. Run first; measure equilibrium tilt.
-    for U in (10.0,):
+    #     One per wind speed used anywhere below. Filter to the ones you need,
+    #     e.g. --only BASE_U8,BASE_U5,M_ -- a PPPR case with no baseline at its
+    #     wind speed silently falls back to --default-tilt.
+    for U in (10.0, 8.0, 5.0):
         add(f"BASE_U{U:g}", "baseline", U=U, pppr=False)
 
     # --- Sweep A: amplitude (AC drive strength) about the DEV operating point.
@@ -281,6 +284,69 @@ def build_cases():
         for a in (0.5, 1.0, 2.0, 3.0):
             add(f"E_w{w:g}_a{a:g}", "E_grid", omega=w, amp_phi_deg=a,
                 offset_dev_deg=0.0)
+
+    # ========================================================================
+    # Sweep M: the five-variable campaign. ~30 runs, weighted heavily toward
+    # forcing frequency / tilt amplitude / rotation-rate amplitude+phase, with
+    # wind speed and TSR carried as a coarse contrast.
+    #
+    # Operating points are NOT free choices -- two constraints pin them:
+    #
+    #  1. Rotor speed floor. VS_MinOMSpd = 0.5236 rad/s (5.0 rpm). TSR*U/R must
+    #     clear it, so TSR 8.5 needs U >= 7.4 m/s. At 5 m/s the machine is
+    #     speed-limited and its actual TSR is 0.5236*120/5 = 12.6, not 8.5.
+    #
+    #  2. Sign of dCp/dbeta. The Cp-vs-beta peak moves right as TSR rises
+    #     (beta = -1 deg at TSR 8.5, +1 at 9.5, +3 at 12.5). At beta0 = 0 the
+    #     slope crosses zero near TSR 9.0, so kp -> infinity there and inverts
+    #     above. TSR 9.0-9.5 at beta0 = 0 is therefore a forbidden band. Past
+    #     it the formula is well posed again with kp NEGATIVE, which is correct
+    #     rather than broken: at TSR 12.6 the plant really is inverted.
+    #
+    # Hence U=8 runs at Cp-optimal TSR 8.5, and U=5 runs at its speed-limited
+    # TSR 12.5 with the sign-flipped gain the formula produces.
+    # ========================================================================
+    M8 = dict(U=8.0, tsr0=8.5, beta0=0.0, offset_dev_deg=0.0, tmax=800.0)
+    M5 = dict(U=5.0, tsr0=12.5, beta0=0.0, offset_dev_deg=0.0, tmax=800.0)
+    # Nominal for the single-axis sweeps. 0.15 rad/s, NOT the 0.213 platform
+    # mode: the first campaign showed a hard stability boundary between 0.15 and
+    # 0.213, so anchoring M2/M3 at 0.213 put every one of their cases inside the
+    # failure region and measured the frequency limit six more times instead of
+    # phase or rotation-rate-amplitude sensitivity.
+    NOM_W, NOM_A = 0.15, 2.0
+
+    # M1 -- frequency x tilt amplitude. The regime-map contour. 15 cases.
+    for w in (0.10, 0.15, 0.213, 0.25, 0.30):
+        for a in (1.0, 2.0, 3.0):
+            add(f"M1_w{w:g}_a{a:g}", "M1_grid", omega=w, amp_phi_deg=a, **M8)
+
+    # M2 -- rotation-rate phase relative to the tilt waveform. phi_phase_deg is
+    #       0 throughout, so omega_phase_deg IS the relative phase. 4 cases.
+    for ph in (-180.0, -45.0, 0.0, 90.0):
+        add(f"M2_ph{ph:+g}", "M2_omega_phase", omega=NOM_W, amp_phi_deg=NOM_A,
+            omega_phase_deg=ph, **M8)
+
+    # M3 -- rotation-rate amplitude. 2 cases (0.01 is the M1 nominal).
+    for ao in (0.005, 0.02):
+        add(f"M3_ao{ao:g}", "M3_omega_amp", omega=NOM_W, amp_phi_deg=NOM_A,
+            amp_omega=ao, **M8)
+
+    # M4 -- TSR contrast at fixed wind speed. 7.85 is exactly the 5.0 rpm floor
+    #       at 8 m/s, so it is the lowest physically reachable TSR there. 2 cases.
+    for w in (0.15, 0.213):
+        add(f"M4_tsr7.85_w{w:g}", "M4_tsr", omega=w, amp_phi_deg=NOM_A,
+            U=8.0, tsr0=7.85, beta0=0.0, offset_dev_deg=0.0, tmax=800.0)
+
+    # M6 -- locate the stability boundary. The first campaign put it somewhere in
+    #       (0.15, 0.213); these bisect that gap at fixed amplitude so the result
+    #       is a number ("holds to w = X rad/s") rather than a bracket. 5 cases.
+    for w in (0.16, 0.17, 0.18, 0.19, 0.20):
+        add(f"M6_w{w:g}", "M6_boundary", omega=w, amp_phi_deg=NOM_A, **M8)
+
+    # M5 -- low wind speed, speed-limited operating point. 4 cases.
+    for w in (0.15, 0.213):
+        for a in (1.0, 2.0):
+            add(f"M5_U5_w{w:g}_a{a:g}", "M5_lowU", omega=w, amp_phi_deg=a, **M5)
 
     # de-duplicate ids (sweeps overlap at the nominal point)
     seen, out = set(), []
@@ -617,7 +683,12 @@ def analyse(c, outpath):
     bp = col("BldPitch1")
     if bp:
         n = len(bp)
-        r["pitch_lo_pct"] = round(100.0 * sum(1 for v in bp if v < 0.01) / n, 1)
+        # Saturation must be measured against the floor this case actually ran
+        # with. PC_FinePit is now negative, so the old "< 0.01 deg" test reports
+        # ~50% on healthy runs and no longer means "clipped".
+        lo_deg = math.degrees(c.get("pc_finepit_rad", 0.0))
+        r["pitch_floor_deg"] = round(lo_deg, 2)
+        r["pitch_lo_pct"] = round(100.0 * sum(1 for v in bp if v < lo_deg + 0.01) / n, 1)
         r["pitch_hi_pct"] = round(100.0 * sum(1 for v in bp if v > 89.9) / n, 1)
         r["pitch_mean"] = round(sum(bp) / n, 3)
         r["pitch_min"] = round(min(bp), 3)
@@ -772,6 +843,8 @@ def process_case(c, args, tilts, rows, lock, results, idx, total):
     row = dict(id=c["id"], group=c["group"], U=c["U"], omega=c["omega"],
                freq_hz=round(c["_freq_hz"], 6), amp_phi_deg=c["amp_phi_deg"],
                amp_omega=c["amp_omega"], offset_dev_deg=c["offset_dev_deg"],
+               tsr0=c["tsr0"], beta0=c["beta0"],
+               omega_phase_deg=c["omega_phase_deg"],
                tilt_deg=round(c["tilt_deg"], 3), waves=int(c["waves"]),
                pc_finepit=c["pc_finepit_rad"],
                kp=round(c["_gains"]["kp"], 6), kr=round(c["_gains"]["kr"], 6),

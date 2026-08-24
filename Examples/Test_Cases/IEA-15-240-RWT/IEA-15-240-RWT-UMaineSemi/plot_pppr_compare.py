@@ -19,6 +19,7 @@ and PPPR_offset_phi in degrees, phase entering as sin(w*t - phase*D2R).
 """
 
 import argparse
+import glob
 import math
 import os
 import re
@@ -85,10 +86,50 @@ def main():
     ap.add_argument("--no-show", action="store_true")
     ap.add_argument("--autoscale", action="store_true",
                     help="let matplotlib pick y-limits instead of the reference figure's")
+    ap.add_argument("--all", metavar="PATTERN", nargs="?", const="*",
+                    help="batch mode: plot every SweepRuns/cases/<PATTERN>/ run to "
+                         "SweepRuns/plots/<id>.png. e.g. --all 'M1_*'")
     a = ap.parse_args()
+
+    if a.all:
+        matplotlib.use("Agg")
+        cdir = os.path.join(HERE, "SweepRuns", "cases")
+        outdir = os.path.join(HERE, "SweepRuns", "plots")
+        os.makedirs(outdir, exist_ok=True)
+        dirs = sorted(d for d in glob.glob(os.path.join(cdir, a.all)) if os.path.isdir(d))
+        if not dirs:
+            raise SystemExit("no case dirs match {} under {}".format(a.all, cdir))
+        done = skipped = 0
+        for d in dirs:
+            cid = os.path.basename(d)
+            o = os.path.join(d, "IEA-15-240-RWT-UMaineSemi.out")
+            dc = os.path.join(d, "IEA-15-240-RWT-UMaineSemi_DISCON.IN")
+            if not (os.path.exists(o) and os.path.exists(dc)):
+                print("  skip {} (no .out)".format(cid))
+                skipped += 1
+                continue
+            print("=== {} ===".format(cid))
+            # Autoscale in batch: the reference figure's y-limits are tuned to a
+            # working run, and a diverged case would be entirely off-panel.
+            rc = plot_one(o, dc, a.tmin, a.tmax, True,
+                          os.path.join(outdir, cid + ".png"))
+            done += rc
+        print("\n{} plots -> {}  ({} skipped)".format(done, outdir, skipped))
+        return
 
     if a.no_show:
         matplotlib.use("Agg")
+    plot_one(a.out, a.discon, a.tmin, a.tmax, a.autoscale, a.save)
+    if not a.no_show:
+        plt.show()
+
+
+def plot_one(outfile, disconfile, tmin, tmax, autoscale, save):
+    class _A:
+        pass
+    a = _A()
+    a.out, a.discon, a.tmin, a.tmax = outfile, disconfile, tmin, tmax
+    a.autoscale, a.save, a.no_show = autoscale, save, True
 
     d = read_out(a.out)
     p = read_discon(a.discon)
@@ -191,8 +232,8 @@ def main():
     if a.save:
         fig.savefig(a.save, dpi=130)
         print("wrote {}".format(a.save))
-    if not a.no_show:
-        plt.show()
+    plt.close(fig)
+    return 1
 
 
 if __name__ == "__main__":
