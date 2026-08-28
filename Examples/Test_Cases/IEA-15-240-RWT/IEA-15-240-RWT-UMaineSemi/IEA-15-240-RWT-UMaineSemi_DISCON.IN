@@ -256,5 +256,5 @@
 0.708333    ! PPPR_offset_omega - Mean offset for rotation rate resonant controller [rad/s] -- set this manually from U_inf and TSR_0 (TSR0=8.5, Uinf=10 m/s: 8.5*10/120)
 90                   ! Phi_phaseoffset   - Phase offset for platform pitch reference [deg]
 0.0                 ! Omega_phaseoffset - Phase offset for rotation rate reference [deg]
-0.463407   0.0463407  0.01    ! PPPR_CntrGains_phi    - [Kp, Kr, omega_z] gains for phi resonant controller (undamped resonant term) [-, -, rad/s]. Kp/Kr radian-consistent (fixed deg/rad units bug in gain derivation) for freq=PPPR_freq_phi=0.1 rad/s.
-2.63639e+07  2.63639e+06  0.01    ! PPPR_CntrGains_omega  - [Kp, Kr, omega_z] gains for omega resonant controller (undamped resonant term) [-, -, rad/s]
+0.478527   0.0478527  0.0677073    ! PPPR_CntrGains_phi    - [Kp, Kr, omega_z] gains for phi resonant controller (undamped resonant term) [-, -, rad/s]. Kp/Kr radian-consistent (fixed deg/rad units bug in gain derivation) for freq=PPPR_freq_phi=0.1 rad/s.
+4.75139e+07  4.75139e+06  0.0741888    ! PPPR_CntrGains_omega  - [Kp, Kr, omega_z] gains for omega resonant controller (undamped resonant term) [-, -, rad/s]

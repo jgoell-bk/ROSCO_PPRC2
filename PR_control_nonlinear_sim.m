@@ -11,8 +11,11 @@ TSR0    = 8.5; % optimal TSR is 8.5, design TSR is 9.0
 beta0   = 0; % (deg) optimal blade pitch is -1, design pitch is 0
 Uinf    = 10; % wind speed (m/s) - rated is 10.75 m/s
 freq    = 0.1; % desired forcing frequency (rad/s)
-fz      = freq/10; % desired PI controller zero frequency (rad/s)
+% fz      = freq/10; % desired PI controller zero frequency (rad/s)
 zeta    = 0.7; % desired damping ratio [-]
+zeta_Tg = 1;
+freqd   = freq;
+freqd_Tg = freq;
 R       = 120; % turbine radius (m)
 
 % Reference waveforms
@@ -54,19 +57,29 @@ omega0 = TSR0*Uinf/R;
 [dCt_dbetas, dCt_dTSRs] = gradient(data.Ct, data.angles, data.TSRs);
 dTa_dUs = 1/2*rho*pi*R^3*(2*Uinf*data.Cq - R*omega0*dCq_dTSRs); % sensitivity of aero torque to wind speed (kg m/s)
 dTa_dU0 = interp2(data.betas, data.lambdas, dTa_dUs, beta0, TSR0, interpMethod); % value at setpoint
-dCp_dTSR = interp2(data.betas, data.lambdas, dCp_dTSRs, beta0, TSR0, interpMethod); % value at setpoint
-dCp_dbeta = interp2(data.betas, data.lambdas, dCp_dbetas, beta0, TSR0, interpMethod) * 180/pi; % value at setpoint (data are in deg, convert to rad -- matches dTa_dbeta/dFa_dbeta convention below)
+dCp_dTSR0 = interp2(data.betas, data.lambdas, dCp_dTSRs, beta0, TSR0, interpMethod); % value at setpoint
+dCp_dbeta0 = interp2(data.betas, data.lambdas, dCp_dbetas, beta0, TSR0, interpMethod) * 180/pi; % value at setpoint (data are in deg, convert to rad -- matches dTa_dbeta/dFa_dbeta convention below)
 Cp0 = interp2(data.betas, data.lambdas, data.Cp, beta0, TSR0, interpMethod);
 
+dCt_dTSR0 = interp2(data.betas, data.lambdas, dCt_dTSRs, beta0, TSR0, interpMethod);
+dCt_dbeta0 = interp2(data.betas, data.lambdas, dCt_dbetas, beta0, TSR0, interpMethod) * 180/pi; % value at setpoint (data are in deg, convert to rad -- matches dTa_dbeta/dFa_dbeta convention below)
+Ct0 = interp2(data.betas, data.lambdas, data.Ct, beta0, TSR0, interpMethod);
+
 %% Calculate gains using modified formulae from Abbas et al. (2022)
-A       = 1/2*rho*pi*R^4*Uinf^2 / (Jr*TSR0^2*Uinf) * (dCp_dTSR*TSR0 - Cp0);
-B_beta  = Ng/(2*Jr*TSR0^2) * rho*pi*R^3*Uinf^2 * (dCp_dbeta*TSR0);
+A       = 1/2*rho*pi*R^4*Uinf^2 / (Jr*TSR0^2*Uinf) * (dCp_dTSR0*TSR0 - Cp0);
+B_beta  = Ng/(2*Jr*TSR0^2) * rho*pi*R^3*Uinf^2 * (dCp_dbeta0*TSR0);
 B_Tg    = -Ng^2 / Jr;
-kp      = -1/(2*pi*B_beta)*(2*zeta*freq + A); % for beta-phi PR controller
+% kp      = -1/(B_beta)*(2*zeta*omega_des + A); % for beta-phi PR controller
+kp      = -(Jt*freqd^2*(1-4*zeta^2) + 2*zeta*freqd*(Dt + rho*pi*R^2*ht^2*Uinf ...
+          * (Ct0 - (TSR0/2)*dCt_dTSR0)) - Kt) / (1/2*rho*pi*R^2*ht*Uinf^2*dCt_dbeta0);
+ki      = -abs((Dt + rho*pi*R^2*ht^2*Uinf*(Ct0 - (TSR0/2)*dCt_dTSR0))*freqd^2 ...
+          - 2*Jt*zeta*freqd^3) / (1/2*rho*pi*R^2*ht*Uinf^2*dCt_dbeta0);
+fz      = ki/kp;
 kr      = kp/kp_kr_ratio; % for beta-phi PR controller
 % k_Tg  = m_Tg*ht/Ng*dTa_dU0; % Eqn. 29, from Fischer (2013) and Stockhouse et al. (2021)
-kp_Tg   = -1/B_Tg*(2*zeta*freq + A);
+kp_Tg   = -1/B_Tg*(2*zeta_Tg*freqd + A);
 kr_Tg   = kp_Tg/kp_kr_ratio;
+fz_Tg   = -freqd^2 / B_Tg / kp_Tg;
 
 %% Simulate controller in discrete time
 nSkip = 3; % 3rd order difference equation = pad first 3 time points
@@ -97,7 +110,7 @@ n2 = kp*(b0-b1) + kp*fz*dt/2*(b0+b1) - 2*kr*dt;
 n3 = kp*(fz*dt/2-1)*b0 + 2*kr*dt;
 
 % PR controller parameters (copied from Joeri Frederik's pull request)
-fz_Tg = freq / 10;
+% fz_Tg = freq / 10;
 % a0g = b0*k_Tg + 2*dt*kr_Tg; % a coeffs are attached to input vars
 % a1g = b1*k_Tg;
 % a2g = b2*k_Tg - 2*dt*kr_Tg;
@@ -247,7 +260,7 @@ sys_Tg_to_omega_OL = (- Jt*Ng^2*s^2 + (- dFa_dU*ht^2 - Dt)*Ng^2*s - Kt*Ng^2) ...
 
 %% Define controllers, open-loop systems, and closed-loop systems
 controller_beta = -(kp*(1+fz/s) + kr*s/(s^2+freq^2));
-controller_Tg = -(kp_Tg*(1+fz/s) + kr_Tg*s/(s^2+freq^2));
+controller_Tg = -(kp_Tg*(1+fz_Tg/s) + kr_Tg*s/(s^2+freq^2));
 loop_bp = minreal(sys_beta_to_phi_OL * controller_beta);
 sys_bp = minreal(loop_bp / (1 + loop_bp)); % y/r = PC / (1+PC), Rowley 2.16a
 loop_to = minreal(sys_Tg_to_omega_OL * controller_Tg);
@@ -270,7 +283,7 @@ Cpi_phi   = -kp*(1 + fz/s);
 Cres_phi  = -s/(s^2 + freq^2);
 kr_crit    = find_critical_kr(Cpi_phi,   Cres_phi,   sys_beta_to_phi_OL);
 
-Cpi_omega  = -kp_Tg*(1 + fz/s);
+Cpi_omega  = -kp_Tg*(1 + fz_Tg/s);
 Cres_omega = -s/(s^2 + freq^2);
 % kr_Tg_crit = find_critical_kr(Cpi_omega, Cres_omega, sys_Tg_to_omega_OL);
 
