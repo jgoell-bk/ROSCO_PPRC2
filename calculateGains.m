@@ -29,10 +29,18 @@ ht = 150; % hub height of turbine (m)
 Jt = 1.251e10; % tower moment of inertia (kg m^2)
 rho = 1.2; % air density (kg/m^3)
 mt = 249718; % tower (OC3 spar) mass (kg)
-Dt = 1e7; % platform damping coefficient (e.g. hydrodynamics)
-Kt = 1e8; % platform restoring coefficient (e.g. from mooring lines)
-% Dt and Kt are set based on platform pitch simulation data; analysis code
-% can be found in IEA15MW_steady.m.
+Dt = 4.7e7; % platform damping coefficient (e.g. hydrodynamics)
+Kt = 5.98e8; % platform restoring coefficient (e.g. from mooring lines)
+% Dt and Kt fit from single-DOF (PtfmPDOF only) OpenFAST free-decay tests,
+% no wind, all other DOFs off, fit to
+% phi(t) = C + exp(-sigma*t)*(a*cos(wd*t)+b*sin(wd*t)).
+% Kt=5.98e8 confirmed to 4 sig figs across two independent tests (phi0=10
+% deg with waves, phi0=2 deg no waves) -- wn=0.2187 rad/s both times,
+% matching DISCON.IN's stated platform pitch natural freq (0.213 rad/s)
+% to ~3%. Dt is amplitude-dependent (nonlinear/quadratic damping): the
+% phi0=10deg test gave Dt=9.0e7, phi0=2deg gave Dt=4.7e7 (both tskip=20s
+% fit window). 4.7e7 is used here since PPPR_amp_phi=2deg is close to
+% the actual operating oscillation amplitude.
 interpMethod = 'linear'; % 2D interpolation method for quasi-steady aerodynamics
 
 %% Sensitivity coefficients from IEA 15 MW steady data
