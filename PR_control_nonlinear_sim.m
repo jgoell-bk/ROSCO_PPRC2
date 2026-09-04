@@ -2,22 +2,25 @@
 % Proportional-resonant control for FOWTs - waveform optimization
 % Specify waveform (phi and omega amplitude/freq/phase)
 % Outputs system dynamics, torque/thrust/power mean/amplitude
+% beta->phi loop gains (kp,fz,kr): numerical search maximizing phase
+% margin (see PR_control_gain_optimization.m / calculateGains.m). Tau_g
+% loop gains: unchanged analytical formula (Abbas et al. 2022).
 % Created: 8 April 2026 (modified from PR_control_test.m)
+% Updated: 3 Sep 2026 -- beta->phi gains now from numerical search
 
 %% Inputs
 
 % Operating setpoint
 TSR0    = 8.5; % optimal TSR is 8.5, design TSR is 9.0
 beta0   = 0; % (deg) optimal blade pitch is -1, design pitch is 0
-Uinf    = 10; % wind speed (m/s) - rated is 10.75 m/s
+Uinf    = 8; % wind speed (m/s) - rated is 10.75 m/s
 freq    = 0.1; % desired forcing frequency (rad/s)
-fz      = freq/10; % desired PI controller zero frequency (rad/s)
-zeta    = 0.7; % desired damping ratio [-]
+zeta    = 1; % desired damping ratio, Tau_gen-omega controller ONLY [-]
 R       = 120; % turbine radius (m)
 
 % Reference waveforms
 phi_amp         = 1; % deg
-phi_offset      = 5; % deg
+phi_offset      = 3; % deg
 omega_amp       = 0.01; % rad/s
 omega_phase     = 0; % deg
 omega_offset    = 1*TSR0*Uinf/R;
@@ -32,10 +35,18 @@ ht = 150; % hub height of turbine (m)
 Jt = 1.251e10; % tower moment of inertia (kg m^2)
 rho = 1.2; % air density (kg/m^3)
 mt = 249718; % tower (OC3 spar) mass (kg)
-Dt = 1e7; % platform damping coefficient (e.g. hydrodynamics)
-Kt = 1e8; % platform restoring coefficient (e.g. from mooring lines)
-% Dt and Kt are set based on platform pitch simulation data; analysis code
-% can be found in IEA15MW_steady.m.
+Dt = 4.7e7; % platform damping coefficient (e.g. hydrodynamics)
+Kt = 5.98e8; % platform restoring coefficient (e.g. from mooring lines)
+% Dt and Kt fit from single-DOF (PtfmPDOF only) OpenFAST free-decay tests,
+% no wind, all other DOFs off, fit to
+% phi(t) = C + exp(-sigma*t)*(a*cos(wd*t)+b*sin(wd*t)).
+% Kt=5.98e8 confirmed to 4 sig figs across two independent tests (phi0=10
+% deg with waves, phi0=2 deg no waves) -- wn=0.2187 rad/s both times,
+% matching DISCON.IN's stated platform pitch natural freq (0.213 rad/s)
+% to ~3%. Dt is amplitude-dependent (nonlinear/quadratic damping): the
+% phi0=10deg test gave Dt=9.0e7, phi0=2deg gave Dt=4.7e7 (both tskip=20s
+% fit window). 4.7e7 is used here since PPPR_amp_phi=2deg is close to
+% the actual operating oscillation amplitude.
 
 % Set up simulation parameters
 dt = 1e-2;
@@ -43,7 +54,8 @@ dt = 1e-2;
 t = (0 : dt : pds/freq*2*pi)';
 interpMethod = 'linear'; % 2D interpolation method for quasi-steady aerodynamics
 
-kp_kr_ratio = 10; % kp/kr for PR controller gains
+stability_margin = 0.02;  % beta->phi search: require max(Re(ALL poles)) < -stability_margin
+kp_kr_ratio_max = 10;      % beta->phi search ceiling on |kp/kr|; also fixed kp/kr for Tau_gen-omega
 m_Tg = 1; % in range [0, 1]
 
 %% Sensitivity coefficients from IEA 15 MW steady data
@@ -54,19 +66,107 @@ omega0 = TSR0*Uinf/R;
 [dCt_dbetas, dCt_dTSRs] = gradient(data.Ct, data.angles, data.TSRs);
 dTa_dUs = 1/2*rho*pi*R^3*(2*Uinf*data.Cq - R*omega0*dCq_dTSRs); % sensitivity of aero torque to wind speed (kg m/s)
 dTa_dU0 = interp2(data.betas, data.lambdas, dTa_dUs, beta0, TSR0, interpMethod); % value at setpoint
-dCp_dTSR = interp2(data.betas, data.lambdas, dCp_dTSRs, beta0, TSR0, interpMethod); % value at setpoint
-dCp_dbeta = interp2(data.betas, data.lambdas, dCp_dbetas, beta0, TSR0, interpMethod) * 180/pi; % value at setpoint (data are in deg, convert to rad -- matches dTa_dbeta/dFa_dbeta convention below)
+dCp_dTSR0 = interp2(data.betas, data.lambdas, dCp_dTSRs, beta0, TSR0, interpMethod); % value at setpoint
 Cp0 = interp2(data.betas, data.lambdas, data.Cp, beta0, TSR0, interpMethod);
 
-%% Calculate gains using modified formulae from Abbas et al. (2022)
-A       = 1/2*rho*pi*R^4*Uinf^2 / (Jr*TSR0^2*Uinf) * (dCp_dTSR*TSR0 - Cp0);
-B_beta  = Ng/(2*Jr*TSR0^2) * rho*pi*R^3*Uinf^2 * (dCp_dbeta*TSR0);
+Ct0 = interp2(data.betas, data.lambdas, data.Ct, beta0, TSR0, interpMethod);
+
+%% Open-loop transfer functions (from the A0/Bc matrices), at the setpoint
+dCq_dTSR = interp2(data.betas, data.lambdas, dCq_dTSRs, beta0, TSR0, interpMethod);
+dCt_dTSR = interp2(data.betas, data.lambdas, dCt_dTSRs, beta0, TSR0, interpMethod);
+dCq_dbeta = interp2(data.betas, data.lambdas, dCq_dbetas, beta0, TSR0, interpMethod);
+dCt_dbeta = interp2(data.betas, data.lambdas, dCt_dbetas, beta0, TSR0, interpMethod);
+% Dimensional versions
+dTa_domega = 1/2*rho*Uinf*pi*R^4*dCq_dTSR; % sensitivity of aero torque to rotation rate (N s/rad)
+dFa_domega = 1/2*rho*Uinf*pi*R^3*dCt_dTSR; % sensitivity of thrust force to rotation rate (N s / rad*m)
+dTa_dbeta = 1/2*rho*Uinf^2*pi*R^3*dCq_dbeta * 180/pi; % sensitivity of aero torque to blade pitch angle (data are in deg, convert to rad)
+dFa_dbeta = 1/2*rho*Uinf^2*pi*R^2*dCt_dbeta * 180/pi; % sensitivity of thrust force to blade pitch angle (data are in deg, convert to rad)
+dTa_dU = 1/2*rho*pi*R^3*(2*Uinf ...
+    * interp2(data.betas, data.lambdas, data.Cq, beta0, TSR0) ...
+    - R*omega0*dCq_dTSR); % sensitivity of aero torque to wind speed (kg m/s)
+dFa_dU = 1/2*rho*pi*R^2*(2*Uinf ...
+    * interp2(data.betas, data.lambdas, data.Ct, beta0, TSR0) ...
+    - R*omega0*dCt_dTSR); % sensitivity of thrust force to wind speed (kg/s)
+
+s = tf('s');
+sys_beta_to_phi_OL = (ht*(Ng*dFa_domega*dTa_dbeta - Ng*dFa_dbeta*dTa_domega ...
+    + Jr*dFa_dbeta*s))/(Jr*Kt*s - Kt*Ng*dTa_domega + Dt*Jr*s^2 + Jr*Jt*s^3 ...
+    - Jt*Ng*dTa_domega*s^2 + Jr*dFa_dU*ht^2*s^2 - Dt*Ng*dTa_domega*s ...
+    - Ng*dFa_dU*dTa_domega*ht^2*s + Ng*dFa_domega*dTa_dU*ht^2*s); % no control
+sys_Tg_to_phi_OL = -(Ng^2*dFa_domega*ht)/(Jr*Kt*s - Kt*Ng*dTa_domega + Dt*Jr*s^2 ...
+    + Jr*Jt*s^3 - Jt*Ng*dTa_domega*s^2 + Jr*dFa_dU*ht^2*s^2 - Dt*Ng*dTa_domega*s ...
+    - Ng*dFa_dU*dTa_domega*ht^2*s + Ng*dFa_domega*dTa_dU*ht^2*s); % no control
+sys_beta_to_omega_OL = (Jt*Ng*dTa_dbeta*s^2 + Ng*(Dt*dTa_dbeta + dFa_dU*dTa_dbeta*ht^2 ...
+    - dFa_dbeta*dTa_dU*ht^2)*s + Kt*Ng*dTa_dbeta) ...
+    / (Jr*Jt*s^3 + (Jr*dFa_dU*ht^2 + Dt*Jr - Jt*Ng*dTa_domega)*s^2 ...
+    + (Jr*Kt - Dt*Ng*dTa_domega - Ng*dFa_dU*dTa_domega*ht^2 ...
+    + Ng*dFa_domega*dTa_dU*ht^2)*s - Kt*Ng*dTa_domega);
+sys_Tg_to_omega_OL = (- Jt*Ng^2*s^2 + (- dFa_dU*ht^2 - Dt)*Ng^2*s - Kt*Ng^2) ...
+    / (Jr*Jt*s^3 + (Jr*dFa_dU*ht^2 + Dt*Jr - Jt*Ng*dTa_domega)*s^2 ...
+    + (Jr*Kt - Dt*Ng*dTa_domega - Ng*dFa_dU*dTa_domega*ht^2 ...
+    + Ng*dFa_domega*dTa_dU*ht^2)*s - Kt*Ng*dTa_domega);
+
+%% Characterization
+phi_eq  = ht*(1/2*rho*pi*R^2*Uinf^2*Ct0)/Kt;
+freqd = freq; % desired natural frequency, Tau_gen-omega controller ONLY (rad/s)
+
+%% beta->phi loop gains: numerical search over (kp,fz,kr), ALL free,
+%% maximizing phase margin subject to (1) closed-loop stability (ALL
+%% poles) with margin, (2) fz < freq, and (3) |kp/kr| <= kp_kr_ratio_max.
+kp0 = 0.5; % fixed seed, not the final gains
+fz0 = 0.1*freq;
+fz_hi = freq*(1 - 1e-6); % HARD CONSTRAINT: fz < freq, tiny fp safety margin
+fz_grid_lo = 1e-3*freq;  % grid seeding range only, not a constraint
+kr0 = kp0/kp_kr_ratio_max;
+
+gainBound = struct('kp', 5*abs(kp0), 'kr', 5*abs(kr0));
+
+evalGains = @(x) evaluate_gains(x(1), x(2), x(3), kp_kr_ratio_max, fz_hi, ...
+    sys_beta_to_phi_OL, freq, stability_margin, gainBound);
+
+N = 13; % grid points per dimension: 13^3=2197 evaluations
+kp_range = linspace(-gainBound.kp, gainBound.kp, N);
+fz_range = linspace(fz_grid_lo, fz_hi, N);
+kr_range = linspace(-gainBound.kr, gainBound.kr, N);
+
+bestCost = inf; bestX = [kp0, fz0, kr0];
+for ikp = 1:N
+    for ifz = 1:N
+        for ikr = 1:N
+            cost = evalGains([kp_range(ikp), fz_range(ifz), kr_range(ikr)]);
+            if cost < bestCost
+                bestCost = cost;
+                bestX = [kp_range(ikp), fz_range(ifz), kr_range(ikr)];
+            end
+        end
+    end
+end
+
+opts = optimset('Display', 'off', 'TolX', 1e-10, 'TolFun', 1e-10, 'MaxFunEvals', 8000, 'MaxIter', 8000);
+xopt = fminsearch(evalGains, bestX, opts);
+
+[~, feasibleOpt, diagOpt] = evaluate_gains(xopt(1), xopt(2), xopt(3), ...
+    kp_kr_ratio_max, fz_hi, sys_beta_to_phi_OL, freq, stability_margin, gainBound);
+kp = xopt(1); fz = xopt(2); kr = xopt(3);
+kp_kr_ratio_actual = kp/kr; % the ACTUAL converged ratio -- may sit at kp_kr_ratio_max or, if
+                            % the search is unconstrained by it, elsewhere; used below (root
+                            % locus vs. kp/fz) wherever "kp/kr fixed" is assumed
+
+fprintf('=== beta->phi gains (numerical search) ===\n');
+fprintf('kp=%.6f, fz=%.6f, kr=%.6f  (|kp/kr|=%.3f, feasible=%d)\n', kp, fz, kr, abs(kp_kr_ratio_actual), feasibleOpt);
+fprintf('max(Re(ALL poles))=%.6f, Phase margin=%.2f deg, Gain margin=%.2f dB\n', ...
+    diagOpt.maxRe, diagOpt.PM, diagOpt.GM_dB);
+if ~feasibleOpt
+    warning('PR_control_nonlinear_sim:infeasible', ...
+        'Numerical search did not converge to a feasible (stable) beta->phi design -- widen the search range or relax stability_margin.');
+end
+
+%% Tau_g->omega loop gains: unchanged analytical formula (Abbas et al. 2022)
+A       = 1/2*rho*pi*R^4*Uinf^2 / (Jr*TSR0^2*Uinf) * (dCp_dTSR0*TSR0 - Cp0);
 B_Tg    = -Ng^2 / Jr;
-kp      = -1/(2*pi*B_beta)*(2*zeta*freq + A); % for beta-phi PR controller
-kr      = kp/kp_kr_ratio; % for beta-phi PR controller
-% k_Tg  = m_Tg*ht/Ng*dTa_dU0; % Eqn. 29, from Fischer (2013) and Stockhouse et al. (2021)
-kp_Tg   = -1/B_Tg*(2*zeta*freq + A);
-kr_Tg   = kp_Tg/kp_kr_ratio;
+kp_Tg   = -1/B_Tg*(2*zeta*freqd + A);
+kr_Tg   = kp_Tg/kp_kr_ratio_max;
+fz_Tg   = -freqd^2 / B_Tg / kp_Tg;
 
 %% Simulate controller in discrete time
 nSkip = 3; % 3rd order difference equation = pad first 3 time points
@@ -97,7 +197,7 @@ n2 = kp*(b0-b1) + kp*fz*dt/2*(b0+b1) - 2*kr*dt;
 n3 = kp*(fz*dt/2-1)*b0 + 2*kr*dt;
 
 % PR controller parameters (copied from Joeri Frederik's pull request)
-fz_Tg = freq / 10;
+% fz_Tg = freq / 10;
 % a0g = b0*k_Tg + 2*dt*kr_Tg; % a coeffs are attached to input vars
 % a1g = b1*k_Tg;
 % a2g = b2*k_Tg - 2*dt*kr_Tg;
@@ -208,46 +308,9 @@ plot(t*freq/(2*pi), omega_ref, 'r--', 'LineWidth', 2);
 ylabel('Rotation Rate, $\omega$ (rad/s)', 'interpreter', 'latex')
 legend({'$\phi$', '$\phi_{ref}$', '$\beta$', '$\omega$', '$\omega_{ref}$'}, 'interpreter', 'latex');
 
-%% Lastly, analyze transfer functions (from PR_control_test.m)
-% Compute local sensitivity derivatives
-dCq_dTSR = interp2(data.betas, data.lambdas, dCq_dTSRs, beta0, TSR0, interpMethod);
-dCt_dTSR = interp2(data.betas, data.lambdas, dCt_dTSRs, beta0, TSR0, interpMethod);
-dCq_dbeta = interp2(data.betas, data.lambdas, dCq_dbetas, beta0, TSR0, interpMethod);
-dCt_dbeta = interp2(data.betas, data.lambdas, dCt_dbetas, beta0, TSR0, interpMethod);
-% Dimensional versions
-dTa_domega = 1/2*rho*Uinf*pi*R^4*dCq_dTSR; % sensitivity of aero torque to rotation rate (N s/rad)
-dFa_domega = 1/2*rho*Uinf*pi*R^3*dCt_dTSR; % sensitivity of thrust force to rotation rate (N s / rad*m)
-dTa_dbeta = 1/2*rho*Uinf^2*pi*R^3*dCq_dbeta * 180/pi; % sensitivity of aero torque to blade pitch angle (data are in deg, convert to rad)
-dFa_dbeta = 1/2*rho*Uinf^2*pi*R^2*dCt_dbeta * 180/pi; % sensitivity of thrust force to blade pitch angle (data are in deg, convert to rad)
-dTa_dU = 1/2*rho*pi*R^3*(2*Uinf ...
-    * interp2(data.betas, data.lambdas, data.Cq, beta0, TSR0) ...
-    - R*omega0*dCq_dTSR); % sensitivity of aero torque to wind speed (kg m/s)
-dFa_dU = 1/2*rho*pi*R^2*(2*Uinf ...
-    * interp2(data.betas, data.lambdas, data.Ct, beta0, TSR0) ...
-    - R*omega0*dCt_dTSR); % sensitivity of thrust force to wind speed (kg/s)
-
-% NEW: TFs manually copied from PR_control_analysis.m (symbolic solve)
-s = tf('s');
-sys_beta_to_phi_OL = (ht*(Ng*dFa_domega*dTa_dbeta - Ng*dFa_dbeta*dTa_domega ...
-    + Jr*dFa_dbeta*s))/(Jr*Kt*s - Kt*Ng*dTa_domega + Dt*Jr*s^2 + Jr*Jt*s^3 ...
-    - Jt*Ng*dTa_domega*s^2 + Jr*dFa_dU*ht^2*s^2 - Dt*Ng*dTa_domega*s ...
-    - Ng*dFa_dU*dTa_domega*ht^2*s + Ng*dFa_domega*dTa_dU*ht^2*s); % no control
-sys_Tg_to_phi_OL = -(Ng^2*dFa_domega*ht)/(Jr*Kt*s - Kt*Ng*dTa_domega + Dt*Jr*s^2 ...
-    + Jr*Jt*s^3 - Jt*Ng*dTa_domega*s^2 + Jr*dFa_dU*ht^2*s^2 - Dt*Ng*dTa_domega*s ...
-    - Ng*dFa_dU*dTa_domega*ht^2*s + Ng*dFa_domega*dTa_dU*ht^2*s); % no control
-sys_beta_to_omega_OL = (Jt*Ng*dTa_dbeta*s^2 + Ng*(Dt*dTa_dbeta + dFa_dU*dTa_dbeta*ht^2 ...
-    - dFa_dbeta*dTa_dU*ht^2)*s + Kt*Ng*dTa_dbeta) ...
-    / (Jr*Jt*s^3 + (Jr*dFa_dU*ht^2 + Dt*Jr - Jt*Ng*dTa_domega)*s^2 ...
-    + (Jr*Kt - Dt*Ng*dTa_domega - Ng*dFa_dU*dTa_domega*ht^2 ...
-    + Ng*dFa_domega*dTa_dU*ht^2)*s - Kt*Ng*dTa_domega);
-sys_Tg_to_omega_OL = (- Jt*Ng^2*s^2 + (- dFa_dU*ht^2 - Dt)*Ng^2*s - Kt*Ng^2) ...
-    / (Jr*Jt*s^3 + (Jr*dFa_dU*ht^2 + Dt*Jr - Jt*Ng*dTa_domega)*s^2 ...
-    + (Jr*Kt - Dt*Ng*dTa_domega - Ng*dFa_dU*dTa_domega*ht^2 ...
-    + Ng*dFa_domega*dTa_dU*ht^2)*s - Kt*Ng*dTa_domega);
-
 %% Define controllers, open-loop systems, and closed-loop systems
 controller_beta = -(kp*(1+fz/s) + kr*s/(s^2+freq^2));
-controller_Tg = -(kp_Tg*(1+fz/s) + kr_Tg*s/(s^2+freq^2));
+controller_Tg = -(kp_Tg*(1+fz_Tg/s) + kr_Tg*s/(s^2+freq^2));
 loop_bp = minreal(sys_beta_to_phi_OL * controller_beta);
 sys_bp = minreal(loop_bp / (1 + loop_bp)); % y/r = PC / (1+PC), Rowley 2.16a
 loop_to = minreal(sys_Tg_to_omega_OL * controller_Tg);
@@ -258,6 +321,64 @@ loop_tp = minreal(sys_Tg_to_phi_OL * controller_Tg);
 sys_tp = minreal(loop_tp / (1 + loop_tp)); % y/r = PC / (1+PC), Rowley 2.16a
 
 % margin(loop_bp)
+
+%% Root locus analysis: kp (fz, kp/kr fixed)
+% With fz and kp/kr both held fixed at their converged values, controller_beta
+% is EXACTLY proportional to kp:
+%   controller_beta = -kp*[(1+fz/s) + (1/kp_kr_ratio_actual)*s/(s^2+freq^2)]
+%                    = kp * C_shape_kp(s)
+% so sweeping kp is a standard root-locus gain sweep of
+% sys_beta_to_phi_OL*C_shape_kp(s) closed in unity negative feedback.
+C_shape_kp = -(1 + fz/s + (1/kp_kr_ratio_actual)*s/(s^2+freq^2));
+G_rlocus_kp = minreal(sys_beta_to_phi_OL * C_shape_kp);
+figure;
+rlocus(G_rlocus_kp);
+title(sprintf('Root locus vs. k_p  (f_z=%.4g, k_p/k_r=%.4g fixed)', fz, kp_kr_ratio_actual));
+hold on;
+plot(real(pole(sys_bp)), imag(pole(sys_bp)), 'kd', 'MarkerSize', 9, 'LineWidth', 1.5, ...
+    'DisplayName', sprintf('current design point k_p=%.4g', kp));
+legend('show', 'Location', 'best');
+
+% Numerical cross-check: the closed-loop poles at the CURRENT kp should be
+% identical whether computed directly (controller_beta/loop_bp/sys_bp) or
+% as the root locus evaluated at gain=kp -- confirms the K*G(s)
+% reformulation above is algebraically correct, not just plausible-looking.
+poles_direct_kp = pole(sys_bp);
+poles_rlocus_kp = rlocus(G_rlocus_kp, kp);
+fprintf('\n=== Root locus (k_p) cross-check at k_p=%.5f ===\n', kp);
+fprintf('  max(Re), direct (sys_bp)      = %.6f\n', max(real(poles_direct_kp)));
+fprintf('  max(Re), via rlocus(G,k_p)    = %.6f\n', max(real(poles_rlocus_kp)));
+
+%% Root locus analysis: fz (kp, kp/kr fixed)
+% With kp and kp/kr (hence kr) held fixed, fz enters the closed loop as an
+% OUTER loop closed around the already kp+kr-compensated system. Writing
+% controller_beta = A_fz(s) + fz*B_fz(s), with
+%   A_fz(s) = -(kp + kr*s/(s^2+freq^2))   [proportional+resonant part only, fz=0]
+%   B_fz(s) = -kp/s                       [coefficient multiplying fz]
+% the closed-loop characteristic equation 1+sys_beta_to_phi_OL*controller_beta=0,
+% after dividing through by (1+sys_beta_to_phi_OL*A_fz(s)) -- i.e. closing
+% the proportional+resonant loop first -- becomes the standard root-locus
+% form 1 + fz*S0_fz(s)*B_fz(s) = 0, a gain sweep in fz.
+A_fz = -(kp + kr*s/(s^2+freq^2));
+loop_fz0 = minreal(sys_beta_to_phi_OL * A_fz);
+S0_fz = minreal(sys_beta_to_phi_OL / (1 + loop_fz0));
+B_fz = -kp/s;
+G_rlocus_fz = minreal(S0_fz * B_fz);
+figure;
+rlocus(G_rlocus_fz);
+title(sprintf('Root locus vs. f_z  (k_p=%.4g, k_p/k_r=%.4g fixed)', kp, kp_kr_ratio_actual));
+hold on;
+plot(real(pole(sys_bp)), imag(pole(sys_bp)), 'kd', 'MarkerSize', 9, 'LineWidth', 1.5, ...
+    'DisplayName', sprintf('current design point f_z=%.4g', fz));
+legend('show', 'Location', 'best');
+
+% Same cross-check as above, this time sweeping fz through the inner-loop
+% reformulation.
+poles_direct_fz = pole(sys_bp);
+poles_rlocus_fz = rlocus(G_rlocus_fz, fz);
+fprintf('\n=== Root locus (f_z) cross-check at f_z=%.5f ===\n', fz);
+fprintf('  max(Re), direct (sys_bp)      = %.6f\n', max(real(poles_direct_fz)));
+fprintf('  max(Re), via rlocus(G,f_z)    = %.6f\n', max(real(poles_rlocus_fz)));
 
 %% Critical kr / kr_Tg via numerical pole sweep, then set gains to 10% of critical
 % For each loop, C(s) = Cpi(s) + kr*Cres(s), with Cpi(s) = kp*(1+fz/s) and
@@ -270,7 +391,7 @@ Cpi_phi   = -kp*(1 + fz/s);
 Cres_phi  = -s/(s^2 + freq^2);
 kr_crit    = find_critical_kr(Cpi_phi,   Cres_phi,   sys_beta_to_phi_OL);
 
-Cpi_omega  = -kp_Tg*(1 + fz/s);
+Cpi_omega  = -kp_Tg*(1 + fz_Tg/s);
 Cres_omega = -s/(s^2 + freq^2);
 % kr_Tg_crit = find_critical_kr(Cpi_omega, Cres_omega, sys_Tg_to_omega_OL);
 
@@ -282,6 +403,67 @@ fprintf('phi loop:   kr_crit    = %.6g   ->   kr    = 0.1*kr_crit    = %.6g\n', 
 % fprintf('omega loop: kr_Tg_crit = %.6g   ->   kr_Tg = 0.1*kr_Tg_crit = %.6g\n', kr_Tg_crit, kr_Tg_2);
 
 %% ------------------------------------------------------------------
+function [cost, feasible, diagnostics] = evaluate_gains(kp, fz, kr, ...
+    kp_kr_ratio_max, fz_hi, sys_beta_to_phi_OL, freq, stability_margin, gainBound)
+% Cost = -PhaseMargin for feasible (kp,fz,kr), plus a soft box penalty on
+% kp,kr. Hard constraints, each penalized like instability if violated:
+%   (1) closed-loop stability, checked against ALL poles, with at least
+%       stability_margin of clearance from the imaginary axis
+%   (2) fz < fz_hi
+%   (3) |kp/kr| <= kp_kr_ratio_max
+s = tf('s');
+diagnostics = struct('maxRe', NaN, 'PM', NaN, 'GM_dB', NaN, 'Wcp', NaN);
+if abs(kp) < 1e-8
+    cost = 1e8; feasible = false; return; % avoid degenerate near-zero-gain controllers
+end
+boxPenalty = max(0, abs(kp)-gainBound.kp)^2 + max(0, abs(kr)-gainBound.kr)^2;
+
+if fz >= fz_hi
+    cost = 1e6 + abs(fz-fz_hi)*1e2 + boxPenalty;
+    feasible = false;
+    return;
+end
+
+ratio = abs(kp) / max(abs(kr), 1e-10);
+if ratio > kp_kr_ratio_max
+    cost = 1e6 + (ratio - kp_kr_ratio_max)*1e2 + boxPenalty;
+    feasible = false;
+    return;
+end
+
+try
+    controller_beta = -(kp*(1+fz/s) + kr*s/(s^2+freq^2));
+    loop_bp = minreal(sys_beta_to_phi_OL * controller_beta);
+    sys_bp  = minreal(loop_bp / (1 + loop_bp));
+    p = pole(sys_bp); % ALL closed-loop poles, not a subset
+    maxRe = max(real(p));
+    diagnostics.maxRe = maxRe;
+    feasible = maxRe < -stability_margin;
+    if ~feasible
+        cost = 1e6 + (maxRe + stability_margin)*1e4 + boxPenalty;
+        return;
+    end
+
+    [Gm, Pm, ~, Wcp] = margin(loop_bp);
+    if isempty(Pm) || isnan(Pm) || isinf(Pm)
+        Pm = 180; % no gain crossover -> excellent margin
+    end
+    if isempty(Gm) || isnan(Gm) || isinf(Gm)
+        GM_dB = 40; % sentinel "very good" gain margin
+    else
+        GM_dB = 20*log10(Gm);
+    end
+    diagnostics.PM = Pm;
+    diagnostics.GM_dB = GM_dB;
+    diagnostics.Wcp = Wcp;
+
+    cost = -Pm + boxPenalty; % minimize -PM = maximize PM
+catch
+    cost = 1e8;
+    feasible = false;
+end
+end
+
 function kr_crit = find_critical_kr(Cpi, Cres, G)
 % Numerically find the smallest kr>0 at which the closed-loop poles of
 % G*(Cpi + kr*Cres), closed in unity negative feedback, first cross into

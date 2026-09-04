@@ -114,5 +114,8 @@ Examples/Test_Cases/IEA-15-240-RWT/IEA-15-240-RWT-UMaineSemi/SweepRuns/cases/
 .github/PPPR_IMPLEMENTATION_GUIDE.md
 .github/copilot-instructions.md
 calculateGains.asv
+*.asv
+PR_control_vs_openfast.m
+PR_control_gain_optimization.m
 fort.[0-9]*
 *.dwarf

@@ -248,13 +248,13 @@
 
 !------- PLATFORM PROPORTIONAL RESONANT CONTROL ---------------------------------------------------------
 1                   ! PPPR_Mode         - Platform proportional resonant control mode {0 - off, 1 - on}
-2.0                 ! PPPR_amp_phi      - Amplitude for platform pitch sinusoidal reference [deg]
+3.0                 ! PPPR_amp_phi      - Amplitude for platform pitch sinusoidal reference [deg]
 0.1    ! PPPR_freq_phi     - Frequency for platform pitch resonant controller (platform pitch natural freq = 0.213 rad/s) [rad/s]
-5.0                 ! PPPR_offset_phi   - Mean offset for platform pitch resonant controller [deg]
-0.01                ! PPPR_amp_omega    - Amplitude for rotation rate sinusoidal reference [rad/s]
+3.0                 ! PPPR_offset_phi   - Mean offset for platform pitch resonant controller [deg]
+0.03                ! PPPR_amp_omega    - Amplitude for rotation rate sinusoidal reference [rad/s]
 0.1    ! PPPR_freq_omega   - Frequency for rotation rate resonant controller [rad/s]
-0.708333    ! PPPR_offset_omega - Mean offset for rotation rate resonant controller [rad/s] -- set this manually from U_inf and TSR_0 (TSR0=8.5, Uinf=10 m/s: 8.5*10/120)
-90                   ! Phi_phaseoffset   - Phase offset for platform pitch reference [deg]
+0.566667    ! PPPR_offset_omega - Mean offset for rotation rate resonant controller [rad/s] -- set this manually from U_inf and TSR_0 (TSR0=8.5, Uinf=8 m/s: 8.5*8/120)
+0                   ! Phi_phaseoffset   - Phase offset for platform pitch reference [deg]
 0.0                 ! Omega_phaseoffset - Phase offset for rotation rate reference [deg]
-0.463407   0.0463407  0.01    ! PPPR_CntrGains_phi    - [Kp, Kr, omega_z] gains for phi resonant controller (undamped resonant term) [-, -, rad/s]. Kp/Kr radian-consistent (fixed deg/rad units bug in gain derivation) for freq=PPPR_freq_phi=0.1 rad/s.
-2.63639e+07  2.63639e+06  0.01    ! PPPR_CntrGains_omega  - [Kp, Kr, omega_z] gains for omega resonant controller (undamped resonant term) [-, -, rad/s]
+1.25018   0.125018  0.0195331    ! PPPR_CntrGains_phi    - [Kp, Kr, omega_z] gains for phi resonant controller (undamped resonant term) [-, -, rad/s]. From PR_control_gain_optimization.m numerical search (kp,fz,kr free, maximizing phase margin, |kp/kr|<=10, 0.1*freq<=fz<=0.9*freq per ROSCO's own CheckInputs validation) for freq=PPPR_freq_phi=0.1 rad/s, Uinf=8 m/s. Achieves PM=79.99deg, GM=Inf dB, max(Re(poles))=-0.020.
+5.21111e+07  5.21111e+06  0.0676439    ! PPPR_CntrGains_omega  - [Kp, Kr, omega_z] gains for omega resonant controller (undamped resonant term) [-, -, rad/s]. Recomputed for Uinf=8 m/s (previous values were stale from Uinf=10 m/s).
