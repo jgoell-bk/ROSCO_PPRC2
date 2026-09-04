@@ -117,3 +117,5 @@ calculateGains.asv
 *.asv
 PR_control_vs_openfast.m
 PR_control_gain_optimization.m
+fort.[0-9]*
+*.dwarf
