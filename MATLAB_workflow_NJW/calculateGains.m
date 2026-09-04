@@ -1,4 +1,4 @@
-% Nathan Wei
+% Nathan Wei / Claude Code
 % Proportional-resonant control for FOWTs
 % beta->phi loop gains (kp, kr, fz): numerical search maximizing phase
 % margin of the real, coupled beta->phi open loop (built from the actual
@@ -6,9 +6,10 @@
 % margin, (2) fz < freq (ROSCO's CheckInputs requirement), and (3)
 % |kp/kr| <= kp_kr_ratio_max. Tau_g->omega loop gains (kp_Tg, kr_Tg,
 % fz_Tg): unchanged old analytical formula (Abbas et al. 2022).
-% Then rewrites those gains in the UMaineSemi DISCON.IN file.
+% Returns the gains as a struct.
 % Created: 18 Aug 2026 (modified from PR_control_nonlinear_sim.m)
 % Updated: 3 Sep 2026 -- beta->phi gains now from numerical search
+% Updated: 3 Sep 2026 -- DISCON.IN writing moved out to setupSim.m
 
 function params = calculateGains(TSR0, beta0, Uinf, freq, zeta, ...
     stability_margin, kp_kr_ratio_max)
@@ -136,11 +137,6 @@ end
 params = struct('kp', kp, 'kr', kr, 'kp_Tg', kp_Tg, 'kr_Tg', kr_Tg, 'freqz', ...
     fz, 'freqz_Tg', fz_Tg, 'omega0', omega0, 'freq', freq);
 
-%% Rewrite the calculated gains, omega_z, omega0, and freq into the UMaineSemi DISCON.IN file
-disconFile = fullfile(fileparts(mfilename('fullpath')), 'Examples', 'Test_Cases', ...
-    'IEA-15-240-RWT', 'IEA-15-240-RWT-UMaineSemi', 'IEA-15-240-RWT-UMaineSemi_DISCON.IN');
-writeDisconGains(disconFile, params);
-
 end
 
 %% ------------------------------------------------------------------
@@ -203,40 +199,4 @@ catch
     cost = 1e8;
     feasible = false;
 end
-end
-
-%% ------------------------------------------------------------------
-function writeDisconGains(disconFile, params)
-% Rewrite the PPPR_freq_phi, PPPR_freq_omega, PPPR_offset_omega,
-% PPPR_CntrGains_phi, and PPPR_CntrGains_omega lines in disconFile with the
-% newly calculated values, leaving everything else in the file -- including
-% the trailing "! ParamName - description" comments -- untouched.
-
-lines = strsplit(fileread(disconFile), '\n', 'CollapseDelimiters', false);
-
-lines = setDisconValue(lines, 'PPPR_freq_phi', sprintf('%.6g', params.freq));
-lines = setDisconValue(lines, 'PPPR_freq_omega', sprintf('%.6g', params.freq));
-lines = setDisconValue(lines, 'PPPR_offset_omega', sprintf('%.6g', params.omega0));
-lines = setDisconValue(lines, 'PPPR_CntrGains_phi', ...
-    sprintf('%.6g   %.6g  %.6g', params.kp, params.kr, params.freqz));
-lines = setDisconValue(lines, 'PPPR_CntrGains_omega', ...
-    sprintf('%.6g  %.6g  %.6g', params.kp_Tg, params.kr_Tg, params.freqz_Tg));
-
-fid = fopen(disconFile, 'w');
-fwrite(fid, strjoin(lines, '\n'));
-fclose(fid);
-
-end
-
-function lines = setDisconValue(lines, paramName, newValueStr)
-% Replace the value portion (before "!") of the line whose trailing
-% comment names paramName (e.g. "! PPPR_offset_omega - ..."), preserving
-% that comment text as-is.
-marker = ['! ', paramName];
-idx = find(contains(lines, marker), 1);
-if isempty(idx)
-    error('setDisconValue:notFound', 'Could not find "%s" in %s', paramName, 'DISCON.IN');
-end
-commentStart = strfind(lines{idx}, '!');
-lines{idx} = [newValueStr, '    ', lines{idx}(commentStart(1):end)];
 end

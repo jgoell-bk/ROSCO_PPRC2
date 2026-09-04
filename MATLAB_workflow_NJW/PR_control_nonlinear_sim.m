@@ -1,5 +1,6 @@
-% Nathan Wei
-% Proportional-resonant control for FOWTs - waveform optimization
+% Nathan Wei / Claude Code
+% Proportional-resonant control for FOWTs
+
 % Specify waveform (phi and omega amplitude/freq/phase)
 % Outputs system dynamics, torque/thrust/power mean/amplitude
 % beta->phi loop gains (kp,fz,kr): numerical search maximizing phase
@@ -61,14 +62,8 @@ m_Tg = 1; % in range [0, 1]
 %% Sensitivity coefficients from IEA 15 MW steady data
 data = load('IEA15MW_Cp_Ct_Cq.mat');
 omega0 = TSR0*Uinf/R;
-[dCp_dbetas, dCp_dTSRs] = gradient(data.Cp, data.angles, data.TSRs);
 [dCq_dbetas, dCq_dTSRs] = gradient(data.Cq, data.angles, data.TSRs);
 [dCt_dbetas, dCt_dTSRs] = gradient(data.Ct, data.angles, data.TSRs);
-dTa_dUs = 1/2*rho*pi*R^3*(2*Uinf*data.Cq - R*omega0*dCq_dTSRs); % sensitivity of aero torque to wind speed (kg m/s)
-dTa_dU0 = interp2(data.betas, data.lambdas, dTa_dUs, beta0, TSR0, interpMethod); % value at setpoint
-dCp_dTSR0 = interp2(data.betas, data.lambdas, dCp_dTSRs, beta0, TSR0, interpMethod); % value at setpoint
-Cp0 = interp2(data.betas, data.lambdas, data.Cp, beta0, TSR0, interpMethod);
-
 Ct0 = interp2(data.betas, data.lambdas, data.Ct, beta0, TSR0, interpMethod);
 
 %% Open-loop transfer functions (from the A0/Bc matrices), at the setpoint
@@ -108,65 +103,18 @@ sys_Tg_to_omega_OL = (- Jt*Ng^2*s^2 + (- dFa_dU*ht^2 - Dt)*Ng^2*s - Kt*Ng^2) ...
 
 %% Characterization
 phi_eq  = ht*(1/2*rho*pi*R^2*Uinf^2*Ct0)/Kt;
-freqd = freq; % desired natural frequency, Tau_gen-omega controller ONLY (rad/s)
 
-%% beta->phi loop gains: numerical search over (kp,fz,kr), ALL free,
-%% maximizing phase margin subject to (1) closed-loop stability (ALL
-%% poles) with margin, (2) fz < freq, and (3) |kp/kr| <= kp_kr_ratio_max.
-kp0 = 0.5; % fixed seed, not the final gains
-fz0 = 0.1*freq;
-fz_hi = freq*(1 - 1e-6); % HARD CONSTRAINT: fz < freq, tiny fp safety margin
-fz_grid_lo = 1e-3*freq;  % grid seeding range only, not a constraint
-kr0 = kp0/kp_kr_ratio_max;
-
-gainBound = struct('kp', 5*abs(kp0), 'kr', 5*abs(kr0));
-
-evalGains = @(x) evaluate_gains(x(1), x(2), x(3), kp_kr_ratio_max, fz_hi, ...
-    sys_beta_to_phi_OL, freq, stability_margin, gainBound);
-
-N = 13; % grid points per dimension: 13^3=2197 evaluations
-kp_range = linspace(-gainBound.kp, gainBound.kp, N);
-fz_range = linspace(fz_grid_lo, fz_hi, N);
-kr_range = linspace(-gainBound.kr, gainBound.kr, N);
-
-bestCost = inf; bestX = [kp0, fz0, kr0];
-for ikp = 1:N
-    for ifz = 1:N
-        for ikr = 1:N
-            cost = evalGains([kp_range(ikp), fz_range(ifz), kr_range(ikr)]);
-            if cost < bestCost
-                bestCost = cost;
-                bestX = [kp_range(ikp), fz_range(ifz), kr_range(ikr)];
-            end
-        end
-    end
-end
-
-opts = optimset('Display', 'off', 'TolX', 1e-10, 'TolFun', 1e-10, 'MaxFunEvals', 8000, 'MaxIter', 8000);
-xopt = fminsearch(evalGains, bestX, opts);
-
-[~, feasibleOpt, diagOpt] = evaluate_gains(xopt(1), xopt(2), xopt(3), ...
-    kp_kr_ratio_max, fz_hi, sys_beta_to_phi_OL, freq, stability_margin, gainBound);
-kp = xopt(1); fz = xopt(2); kr = xopt(3);
+%% Gains: beta->phi from numerical phase-margin search, Tau_g->omega from
+%% the analytical formula (Abbas et al. 2022) -- both via calculateGains.m
+%% (kept in sync with PR_control_gain_optimization.m/setupSim.m).
+params = calculateGains(TSR0, beta0, Uinf, freq, zeta, stability_margin, kp_kr_ratio_max);
+kp = params.kp; kr = params.kr; fz = params.freqz;
+kp_Tg = params.kp_Tg; kr_Tg = params.kr_Tg; fz_Tg = params.freqz_Tg;
 kp_kr_ratio_actual = kp/kr; % the ACTUAL converged ratio -- may sit at kp_kr_ratio_max or, if
                             % the search is unconstrained by it, elsewhere; used below (root
                             % locus vs. kp/fz) wherever "kp/kr fixed" is assumed
-
-fprintf('=== beta->phi gains (numerical search) ===\n');
-fprintf('kp=%.6f, fz=%.6f, kr=%.6f  (|kp/kr|=%.3f, feasible=%d)\n', kp, fz, kr, abs(kp_kr_ratio_actual), feasibleOpt);
-fprintf('max(Re(ALL poles))=%.6f, Phase margin=%.2f deg, Gain margin=%.2f dB\n', ...
-    diagOpt.maxRe, diagOpt.PM, diagOpt.GM_dB);
-if ~feasibleOpt
-    warning('PR_control_nonlinear_sim:infeasible', ...
-        'Numerical search did not converge to a feasible (stable) beta->phi design -- widen the search range or relax stability_margin.');
-end
-
-%% Tau_g->omega loop gains: unchanged analytical formula (Abbas et al. 2022)
-A       = 1/2*rho*pi*R^4*Uinf^2 / (Jr*TSR0^2*Uinf) * (dCp_dTSR0*TSR0 - Cp0);
-B_Tg    = -Ng^2 / Jr;
-kp_Tg   = -1/B_Tg*(2*zeta*freqd + A);
-kr_Tg   = kp_Tg/kp_kr_ratio_max;
-fz_Tg   = -freqd^2 / B_Tg / kp_Tg;
+fprintf('kp=%.6f, fz=%.6f, kr=%.6f  (|kp/kr|=%.3f)\n', kp, fz, kr, abs(kp_kr_ratio_actual));
+fprintf('kp_Tg=%.6g, kr_Tg=%.6g, fz_Tg=%.6f\n', kp_Tg, kr_Tg, fz_Tg);
 
 %% Simulate controller in discrete time
 nSkip = 3; % 3rd order difference equation = pad first 3 time points
@@ -403,67 +351,6 @@ fprintf('phi loop:   kr_crit    = %.6g   ->   kr    = 0.1*kr_crit    = %.6g\n', 
 % fprintf('omega loop: kr_Tg_crit = %.6g   ->   kr_Tg = 0.1*kr_Tg_crit = %.6g\n', kr_Tg_crit, kr_Tg_2);
 
 %% ------------------------------------------------------------------
-function [cost, feasible, diagnostics] = evaluate_gains(kp, fz, kr, ...
-    kp_kr_ratio_max, fz_hi, sys_beta_to_phi_OL, freq, stability_margin, gainBound)
-% Cost = -PhaseMargin for feasible (kp,fz,kr), plus a soft box penalty on
-% kp,kr. Hard constraints, each penalized like instability if violated:
-%   (1) closed-loop stability, checked against ALL poles, with at least
-%       stability_margin of clearance from the imaginary axis
-%   (2) fz < fz_hi
-%   (3) |kp/kr| <= kp_kr_ratio_max
-s = tf('s');
-diagnostics = struct('maxRe', NaN, 'PM', NaN, 'GM_dB', NaN, 'Wcp', NaN);
-if abs(kp) < 1e-8
-    cost = 1e8; feasible = false; return; % avoid degenerate near-zero-gain controllers
-end
-boxPenalty = max(0, abs(kp)-gainBound.kp)^2 + max(0, abs(kr)-gainBound.kr)^2;
-
-if fz >= fz_hi
-    cost = 1e6 + abs(fz-fz_hi)*1e2 + boxPenalty;
-    feasible = false;
-    return;
-end
-
-ratio = abs(kp) / max(abs(kr), 1e-10);
-if ratio > kp_kr_ratio_max
-    cost = 1e6 + (ratio - kp_kr_ratio_max)*1e2 + boxPenalty;
-    feasible = false;
-    return;
-end
-
-try
-    controller_beta = -(kp*(1+fz/s) + kr*s/(s^2+freq^2));
-    loop_bp = minreal(sys_beta_to_phi_OL * controller_beta);
-    sys_bp  = minreal(loop_bp / (1 + loop_bp));
-    p = pole(sys_bp); % ALL closed-loop poles, not a subset
-    maxRe = max(real(p));
-    diagnostics.maxRe = maxRe;
-    feasible = maxRe < -stability_margin;
-    if ~feasible
-        cost = 1e6 + (maxRe + stability_margin)*1e4 + boxPenalty;
-        return;
-    end
-
-    [Gm, Pm, ~, Wcp] = margin(loop_bp);
-    if isempty(Pm) || isnan(Pm) || isinf(Pm)
-        Pm = 180; % no gain crossover -> excellent margin
-    end
-    if isempty(Gm) || isnan(Gm) || isinf(Gm)
-        GM_dB = 40; % sentinel "very good" gain margin
-    else
-        GM_dB = 20*log10(Gm);
-    end
-    diagnostics.PM = Pm;
-    diagnostics.GM_dB = GM_dB;
-    diagnostics.Wcp = Wcp;
-
-    cost = -Pm + boxPenalty; % minimize -PM = maximize PM
-catch
-    cost = 1e8;
-    feasible = false;
-end
-end
-
 function kr_crit = find_critical_kr(Cpi, Cres, G)
 % Numerically find the smallest kr>0 at which the closed-loop poles of
 % G*(Cpi + kr*Cres), closed in unity negative feedback, first cross into
